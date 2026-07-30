@@ -10,8 +10,9 @@ Take-home assignment. The architecture write-up lives in
 
 ## Status
 
-Data model and sample data are in. The form-schema resolver, seller flow, product
-detail page and admin console follow.
+The data model, the inheritance resolver, the form-schema API and the single form
+renderer are in: `/sell?category=<slug>` renders any category's form from database
+rows alone. The admin console, submission, product detail page and homepage follow.
 
 ## Running it locally
 
@@ -49,20 +50,21 @@ belongs on a session-mode connection, for the same reason migrations do.
 
 ## Scripts
 
-| Script                | What it does                                        |
-| --------------------- | --------------------------------------------------- |
-| `npm run dev`         | Development server                                  |
-| `npm run build`       | Production build                                    |
-| `npm test`            | Vitest suite                                        |
-| `npm run typecheck`   | `tsc --noEmit`                                      |
-| `npm run lint`        | ESLint                                              |
-| `npm run format`      | Prettier, write                                     |
-| `npm run db:up`       | Start local Postgres in Docker                      |
-| `npm run db:down`     | Stop it                                             |
-| `npm run db:reset`    | Drop the volume, recreate, re-run all migrations    |
-| `npm run db:generate` | Generate a migration from the schema (`--name=...`) |
-| `npm run db:migrate`  | Apply pending migrations                            |
-| `npm run db:seed`     | Load sample categories, fields and listings         |
+| Script                | What it does                                          |
+| --------------------- | ----------------------------------------------------- |
+| `npm run dev`         | Development server                                    |
+| `npm run build`       | Production build                                      |
+| `npm test`            | Unit tests — pure logic, no database needed           |
+| `npm run test:db`     | Integration tests — needs a migrated, seeded database |
+| `npm run typecheck`   | `tsc --noEmit`                                        |
+| `npm run lint`        | ESLint                                                |
+| `npm run format`      | Prettier, write                                       |
+| `npm run db:up`       | Start local Postgres in Docker                        |
+| `npm run db:down`     | Stop it                                               |
+| `npm run db:reset`    | Drop the volume, recreate, re-run all migrations      |
+| `npm run db:generate` | Generate a migration from the schema (`--name=...`)   |
+| `npm run db:migrate`  | Apply pending migrations                              |
+| `npm run db:seed`     | Load sample categories, fields and listings           |
 
 ## Layout
 

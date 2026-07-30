@@ -56,8 +56,16 @@ jobs:
       - name: Migrations apply to an empty database
         run: npm run db:migrate
 
-      - name: Tests
+      - name: Sample data loads
+        run: npm run db:seed
+
+      - name: Unit tests
         run: npm test
+
+      # The resolver's substance is a recursive CTE, so it is exercised against a
+      # real Postgres rather than a mock.
+      - name: Integration tests
+        run: npm run test:db
 
       - name: Build
         run: npm run build

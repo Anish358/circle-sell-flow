@@ -18,7 +18,8 @@
     "db:reset": "docker compose down -v && docker compose up -d --wait && npm run db:migrate",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=.env src/db/migrate.ts",
-    "db:seed": "tsx --env-file-if-exists=.env src/db/seed/index.ts"
+    "db:seed": "tsx --env-file-if-exists=.env src/db/seed/index.ts",
+    "test:db": "vitest run --config vitest.config.db.mts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

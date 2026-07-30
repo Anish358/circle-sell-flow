@@ -251,7 +251,102 @@ make the stored value's meaning depend on which category read it.
 
 ---
 
-## 8. Deliberate omissions (to state in the README, not to silently skip)
+## 8. Phase 2 — the resolver, the contract, and the one renderer
+
+### One call returns everything needed to render a form
+
+`GET /api/categories/:slug/form-schema` returns groups in order, fields in order,
+each field's type, presentation, options, validation config, default, visibility
+rule, help text and which category it was inherited from — plus the category's
+breadcrumb and `config_version`. The renderer makes no follow-up requests and has
+no second source of truth.
+
+Deliberately **not** in the contract: title, description, price, condition, city.
+Those are typed columns, so they are an ordinary hand-written form section. The
+contract covers only what varies by category, which is the same line drawn in §4.
+
+### Inheritance is `DISTINCT ON (field_id) ORDER BY field_id, distance`
+
+A recursive CTE walks from the category up to the root, collecting every ancestor's
+assignments. Ordering by distance and taking the first row per field implements
+**nearest ancestor wins** in one clause: a category's own assignment beats its
+parent's, which beats its grandparent's.
+
+Two queries total, not N+1 — options are aggregated per field in a lateral join, so
+a category with forty fields still costs two round trips.
+
+Verified against a real database: the sample data resolves a handset's form to
+twelve fields of which only six are declared on it, with one field's `required`
+overriding the ancestor's, and the same library field resolving as required in one
+category and optional in another.
+
+An ancestor being deactivated does **not** strip its descendants' fields. It
+removes the ancestor from the picker; the fields it contributes are still part of
+what its children collect. Only the requested category's own status decides whether
+it can be sold in.
+
+### The form-schema endpoint validates, it does not cache for a window
+
+`Cache-Control: public, max-age=0, must-revalidate` with an ETag of
+`"<slug>-v<config_version>"`. The common case is a 304 with an empty body; a config
+change is visible on the very next request.
+
+A stale window (`s-maxage=60`) would be cheaper and wrong: the admin console
+renders a live preview of this exact response while an admin edits, so any delay
+would show up as the tool appearing broken.
+
+This is also what made the `config_version` gap worth fixing — a category's name
+appears in the contract, so migration `0003` extends the bump trigger to renames.
+Without it the ETag would keep matching and clients would serve a stale name
+indefinitely.
+
+### `chips` are radios, not a new control
+
+Single-select chips render as a `RadioGroup` with the radio visually hidden and the
+label styled as the chip. Keyboard navigation, arrow-key semantics and screen-reader
+announcements come for free, and moving a field between "dropdown" and "chips" is a
+presentation change with no behavioural cost. Multi-select chips are checkboxes by
+the same trick.
+
+That is `type` versus `render_as` paying for itself: four input components cover all
+seven types and all nine presentations, because components are grouped by _value
+shape_, not by appearance.
+
+### Accessibility lives in one component
+
+`FieldShell` owns the label, the required marker, help text, the error message and
+the `aria-describedby` / `aria-invalid` / `aria-required` wiring, with ids derived
+from the field slug so they cannot drift apart. Groups of controls get a
+`fieldset` and `legend`, because one `<label>` cannot describe several inputs.
+
+Generated forms are exactly where accessibility fails systematically — nobody
+remembers the twentieth field. Centralising it means a field an admin invents next
+year is accessible without anyone thinking about it.
+
+### `DynamicForm` is controlled
+
+It takes values and an `onChange` rather than owning state, so the same component
+serves the seller flow, the admin console's live preview, and the hub verification
+screen. Three surfaces, one renderer.
+
+### Unit tests and integration tests are separate commands
+
+`npm test` is pure logic and needs no database, so a reviewer can clone and run it.
+`npm run test:db` reads from a seeded Postgres and covers the resolver, whose
+substance is SQL — a mocked version of it would only prove the mock works. CI runs
+both.
+
+### Proof the claim holds
+
+A brand-new category and a brand-new field were added with six `INSERT` statements
+and no other change of any kind. A complete, correct form appeared at
+`/sell?category=…`: eleven fields, seven inherited from two levels of ancestors,
+with the new field's unit suffix and help text rendered. No migration, no deploy, no
+code.
+
+---
+
+## 9. Deliberate omissions (to state in the README, not to silently skip)
 
 Duplicate detection by perceptual hash, AI condition grading, model → spec
 autofill, field-level drop-off analytics, i18n and unit systems, HEIC decoding and
