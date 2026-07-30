@@ -26,6 +26,27 @@ npm run db:seed
 npm run dev               # http://localhost:3000
 ```
 
+## Seeding a deployed database
+
+Migrations run automatically on deploy (`vercel-build`). Sample data does not,
+because loading it **truncates every table** — that has to be a deliberate act.
+
+Keep the deployed credentials in a separate, git-ignored env file rather than
+editing `.env`, so local development keeps pointing at Docker:
+
+```bash
+# app/.env.supabase — ignored by git, like every .env except .env.example
+DATABASE_URL="…pooler.supabase.com:6543/postgres"            # transaction pooler
+MIGRATION_DATABASE_URL="…pooler.supabase.com:5432/postgres"  # session pooler
+```
+
+```bash
+npx tsx --env-file=.env.supabase src/db/seed/index.ts
+```
+
+The seed uses `MIGRATION_DATABASE_URL` when present: bulk administrative work
+belongs on a session-mode connection, for the same reason migrations do.
+
 ## Scripts
 
 | Script                | What it does                                        |

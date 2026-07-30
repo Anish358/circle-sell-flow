@@ -1,16 +1,26 @@
 import { eq, sql } from "drizzle-orm"
+import { drizzle } from "drizzle-orm/postgres-js"
+import postgres from "postgres"
 
-import { db, schema } from "@/db"
+import * as schema from "@/db/schema"
+import { env } from "@/lib/env"
 import { ASSIGNMENTS, CATEGORIES, FIELDS, FIELD_GROUPS } from "./registry"
 import { LISTINGS, USERS } from "./sample-listings"
 
 /**
- * Loads the sample registry and listings. Safe to re-run: it truncates first, so
- * the demo database always ends in the same known state.
+ * Loads the sample registry and listings.
  *
- * Everything this script does is an INSERT. There is no DDL, because adding a
- * category or a field is data — which is the entire claim the project is making.
+ * **Destructive and re-runnable**: it truncates every table first, so the demo
+ * database always ends in the same known state.
+ *
+ * Everything it does is an INSERT. There is no DDL, because adding a category or
+ * a field is data — which is the entire claim the project is making.
+ *
+ * Owns its connection rather than sharing the app's: bulk administrative work
+ * belongs on a session-mode connection, for the same reason migrations do.
  */
+const client = postgres(env.MIGRATION_DATABASE_URL ?? env.DATABASE_URL, { max: 1 })
+const db = drizzle(client, { schema })
 
 /** Turns rows returned with their slug into a slug → id lookup. */
 function byslug<T>(rows: Array<{ slug: string; id: T }>): Map<string, T> {
@@ -181,8 +191,8 @@ async function report() {
 }
 
 seed()
-  .then(() => process.exit(0))
   .catch((error) => {
     console.error(error)
-    process.exit(1)
+    process.exitCode = 1
   })
+  .finally(() => client.end())
