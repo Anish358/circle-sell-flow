@@ -1,7 +1,8 @@
 import { defineConfig } from "drizzle-kit"
 
 // Drizzle Kit runs outside Next, so it loads .env itself rather than via src/lib/env.
-const url = process.env.DATABASE_URL
+// Prefer the session-mode connection, for the same reason src/db/migrate.ts does.
+const url = process.env.MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL
 if (!url) throw new Error("DATABASE_URL is not set. Copy .env.example to .env.")
 
 export default defineConfig({

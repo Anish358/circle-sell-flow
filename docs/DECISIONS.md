@@ -132,6 +132,15 @@ shadcn/ui, deployed on Vercel; Vitest for tests.
 - **Local Postgres in Docker, Supabase in deployment.** Nothing in the schema
   depends on Supabase-specific extensions, so the two are interchangeable through
   `DATABASE_URL`.
+- **Two connection strings in deployment, one locally.** The app runs on a
+  transaction-mode pooler, which suits short-lived serverless invocations but
+  supports neither prepared statements (hence `prepare: false` in the client) nor
+  session state. Migrations therefore use a session-mode connection via
+  `MIGRATION_DATABASE_URL`. Supabase's direct connection is avoided on both: it is
+  IPv6-only without a paid add-on, and the serverless host cannot reach it.
+- **Migrations run as part of the deploy build** (`vercel-build`), so the deployed
+  schema can never lag the deployed code, and a bad migration fails the deploy
+  instead of half-breaking the running app.
 - **Migrations run through a script (`src/db/migrate.ts`), not the Drizzle Kit
   CLI**, so the same code path runs locally, in CI, and against the deployed
   database.
