@@ -6,10 +6,11 @@ import {
   integer,
   pgTable,
   text,
-  timestamp,
   uniqueIndex,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core"
+
+import { slugCheck, timestamps } from "./_shared"
 
 /**
  * The category tree. Categories nest, and field assignments apply downward: a
@@ -39,20 +40,19 @@ export const categories = pgTable(
 
     /**
      * Bumped whenever anything that changes this category's resolved form schema
-     * changes. Drives ETag caching of the form-schema endpoint and lets a draft
-     * detect that the schema moved while the seller was typing.
+     * changes — including changes inherited from an ancestor. Drives ETag caching
+     * of the form-schema endpoint and lets a draft detect that the schema moved
+     * while the seller was typing. Maintained by trigger, not by application code.
      */
     configVersion: integer("config_version").notNull().default(1),
 
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    ...timestamps,
   },
   (t) => [
     uniqueIndex("categories_slug_key").on(t.slug),
     index("categories_parent_id_idx").on(t.parentId),
 
-    // Slugs are URL-safe and lowercase by construction, not by convention.
-    check("categories_slug_format", sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
+    slugCheck("categories_slug_format", t.slug),
 
     // Cheapest possible cycle guard. Longer cycles are rejected by the
     // application when re-parenting, which needs to walk the tree anyway.

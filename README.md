@@ -10,8 +10,8 @@ Take-home assignment. The architecture write-up lives in
 
 ## Status
 
-Phase 0 — scaffolding, database plumbing, CI. The data model, form-schema
-resolver, seller flow, product detail page and admin console follow.
+Data model and sample data are in. The form-schema resolver, seller flow, product
+detail page and admin console follow.
 
 ## Running it locally
 
@@ -22,6 +22,7 @@ npm ci
 cp .env.example .env      # defaults point at the Docker Postgres below
 npm run db:up             # start Postgres on :54322
 npm run db:migrate
+npm run db:seed
 npm run dev               # http://localhost:3000
 ```
 
@@ -37,8 +38,10 @@ npm run dev               # http://localhost:3000
 | `npm run format`      | Prettier, write                                     |
 | `npm run db:up`       | Start local Postgres in Docker                      |
 | `npm run db:down`     | Stop it                                             |
+| `npm run db:reset`    | Drop the volume, recreate, re-run all migrations    |
 | `npm run db:generate` | Generate a migration from the schema (`--name=...`) |
 | `npm run db:migrate`  | Apply pending migrations                            |
+| `npm run db:seed`     | Load sample categories, fields and listings         |
 
 ## Layout
 

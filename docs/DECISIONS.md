@@ -167,7 +167,91 @@ shadcn/ui, deployed on Vercel; Vitest for tests.
 
 ---
 
-## 7. Deliberate omissions (to state in the README, not to silently skip)
+## 7. Phase 1 data-model decisions
+
+### Slugs are kebab-case everywhere, including inside `attributes`
+
+One format, one regex, one shared helper, enforced by a check constraint on every
+slug column. Field slugs double as `attributes` keys, so `{"battery-health": 89}`
+rather than `battery_health`.
+
+The usual objection is that hyphenated keys are awkward in JavaScript
+(`attributes["battery-health"]` rather than `attributes.battery_health`). It does
+not apply here: application code never names a field, because naming one would
+break the single-renderer invariant. Every access is already
+`attributes[field.slug]`. Meanwhile kebab-case is what URLs want, which matters for
+shareable filter links.
+
+### The database refuses the two changes that would corrupt data
+
+Two invariants are usually written down and then broken by whichever client
+forgets them. Both are triggers instead:
+
+- **A field's `slug` is immutable.** It is the key every stored value lives under;
+  renaming it orphans them. Change the `label`, which is display-only and free.
+- **A field's `type` cannot change in place.** No migration can reinterpret
+  `"eight GB"` as a number. Create a new field and backfill.
+
+Both raise a message that says what to do instead. Option `value_slug` is immutable
+for the same reason one level down. This matters more than it might look: the
+registry is edited at runtime by non-engineers, and in a codebase where several
+clients and pipelines write to the same tables, application-level policy is not a
+boundary. Verified by attempting all of them — plus nine other invalid writes — and
+confirming Postgres rejects each one.
+
+### `config_version` is maintained by trigger, and bumps the whole subtree
+
+Because a category's resolved schema includes everything its ancestors assign, a
+change to a parent has to invalidate its descendants too. `bump_config_version`
+walks downward with a recursive CTE and is called from triggers on assignments,
+field definitions, options, group labels and re-parenting.
+
+It is targeted, not blanket: relabelling a field bumps only the categories that
+assign it. This is what makes ETag caching of the form-schema endpoint safe, and
+what lets a draft detect that the schema moved while the seller was typing.
+
+### Composite dimensions are three fields in a group, not one value
+
+A sofa's dimensions are `length-cm`, `width-cm` and `height-cm` sharing a
+"Dimensions" group. A single composite value would read more elegantly and would
+make "sofas under 200cm wide" impossible to express as an ordinary predicate.
+
+### Field reuse forces one shared vocabulary — the honest cost
+
+Because Brand is one field assigned to a parent category, its option list is the
+union of every brand any descendant might use. A handset's brand dropdown
+therefore contains laptop manufacturers.
+
+This is the real trade-off of a shared library, and the escape hatch is to create
+separate fields when the vocabularies genuinely diverge — accepting that they then
+stop being one thing to maintain. Assignment overrides cover policy and
+presentation; they deliberately cannot narrow an option list, because that would
+make the stored value's meaning depend on which category read it.
+
+### Smaller calls
+
+- **A minimal `users` table exists from the start.** `listings.seller_id` and every
+  authorization check need it, and adding a non-null owner column to existing rows
+  later is far more painful than having the table now. Authentication itself is out
+  of scope.
+- **Integer identity keys for registry tables, `uuid` for listings.** Registry rows
+  are internal, small, and debugged by hand in `psql`, where readable integers
+  help. A listing id is public, so a sequential one would leak volume.
+- **`listing_images` is a table, and `sort = 0` is the primary image.** Order and
+  primacy are things we query and reorder. One ordering rule beats an `is_primary`
+  flag that two rows can both claim.
+- **Detach and archive are different verbs.** Detaching removes an assignment row;
+  archiving sets `archived_at` on the field itself and leaves every listing's
+  values renderable. The field foreign key is `restrict`, so a field in use cannot
+  be deleted even by hand.
+- **The seed truncates and re-inserts.** A demo database is disposable, and an
+  idempotent seed is one less thing to reason about. One sample listing is a
+  deliberately incomplete draft, because drafts save without passing full
+  validation and only publishing demands it.
+
+---
+
+## 8. Deliberate omissions (to state in the README, not to silently skip)
 
 Duplicate detection by perceptual hash, AI condition grading, model → spec
 autofill, field-level drop-off analytics, i18n and unit systems, HEIC decoding and
