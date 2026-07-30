@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to the same branch makes the in-flight run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    # A throwaway Postgres so migrations are proven to apply to an empty
+    # database on every push — that is the gate we care about most.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: circle
+          POSTGRES_PASSWORD: circle
+          POSTGRES_DB: circle
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U circle -d circle"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://circle:circle@localhost:5432/circle
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Types
+        run: npm run typecheck
+
+      - name: Migrations apply to an empty database
+        run: npm run db:migrate
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

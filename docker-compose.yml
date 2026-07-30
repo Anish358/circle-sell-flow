@@ -1,0 +1,23 @@
+# Local Postgres for development. The deployed app runs on Supabase Postgres;
+# nothing in the schema depends on Supabase extensions, so the two are
+# interchangeable via DATABASE_URL.
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: circle-db
+    environment:
+      POSTGRES_USER: circle
+      POSTGRES_PASSWORD: circle
+      POSTGRES_DB: circle
+    ports:
+      - "54322:5432"
+    volumes:
+      - circle-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U circle -d circle"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  circle-db-data:
