@@ -571,8 +571,110 @@ an example from one category.
 
 ---
 
-## 11. Deliberate omissions (to state in the README, not to silently skip)
+## 11. Phase 5 — browse and the product page
 
-Duplicate detection by perceptual hash, AI condition grading, model → spec
-autofill, field-level drop-off analytics, i18n and unit systems, HEIC decoding and
-EXIF rotation.
+### Two resolvers, because they answer different questions
+
+The form resolver answers **"what should this category ask for now?"**, so it returns
+live, assigned fields only. The display resolver answers **"what does this listing
+hold?"** — a question about the past.
+
+The difference only becomes visible once the configuration has moved on from the
+listing, and then it matters a great deal. A listing may carry values for fields that
+have since been archived, or detached from its category, or whose chosen option no
+longer exists. None of them may vanish from the page, so the display lookup is driven
+by the slugs present in the row, keyed by slug, and deliberately **ignores
+`archived_at`** on both fields and options.
+
+Anything no longer part of the category is shown under "Additional details" with a
+line explaining what it is, rather than silently dropped or silently mixed in with
+current fields. Verified end to end: archiving a field, detaching another, and
+archiving a chosen option removed all three from the sell form while the existing
+listing kept rendering every answer — including the retired option's **label**, not
+its slug.
+
+### The homepage reads no attributes at all
+
+Cards need title, price, condition, city and category — all typed columns. No pivot, no
+join per listing, no N+1, and the busiest page in the app never resolves a schema. This
+is the concrete payoff of the storage decision in §2, and the reason EAV's read cost
+would have been paid here for a filtering feature the brief never asks for.
+
+### Keyset pagination, not `OFFSET`
+
+On a marketplace, new listings arrive while someone is reading page one. `OFFSET`
+silently duplicates and skips rows as the set shifts underneath the reader. The cursor
+is `(created_at, slug)`, because `created_at` alone does not break ties
+deterministically and a page boundary landing inside a tie is exactly how a row gets
+shown twice. The cursor is base64url and opaque, so its shape can change without
+breaking a bookmarked URL, and a tampered one falls back to page one instead of
+erroring.
+
+### JSON-LD is the one place React does not protect you
+
+React escapes everything it renders into JSX, which is why seller text needs no thought
+anywhere else in the app. It does **not** escape the contents of a `<script>` tag — that
+content is raw by design and has to go through `dangerouslySetInnerHTML`. A listing
+titled `</script><script>…` would close the tag early and execute.
+
+`JSON.stringify` alone is not enough: it leaves `<`, `>` and `&` untouched because they
+are legal inside a JSON string. They are escaped as `\uXXXX`, which is identical to any
+JSON parser and inert to an HTML tokeniser. U+2028 and U+2029 are escaped too — legal in
+JSON, but line terminators in JavaScript, so an unescaped one is a syntax error in the
+browser.
+
+Five tests cover it, including one asserting the output still parses back to the
+original value, because escaping that changed meaning would be a different bug. Writing
+those literal separators into the source broke the build's parser, which is a neat
+demonstration of the problem being defended against.
+
+`additionalProperty` is built from the configured **prominent** fields, so the
+structured data gains a category's new fields automatically. The same configuration
+drives the form, the page and what search engines are told.
+
+### A draft was publicly readable
+
+The first version of the detail page only 404'd on `removed`, so anyone with the URL
+could read someone else's unpublished draft. Now `active` and `sold` are public,
+`removed` is gone for everyone, and a `draft` is visible only to its own seller — which
+also keeps the "View listing" link working after saving one.
+
+A 404 rather than a 403, because telling a stranger that a listing exists but is hidden
+is itself a small leak. Proven by reassigning the seeded draft to a different seller and
+watching it become a 404.
+
+### Photo uploads are not built, and the empty state is designed
+
+Uploads need object storage, a signed-upload route and MIME sniffing; that is a
+self-contained piece of work rather than a polish item, so it is a stated gap. What is
+built is the whole rendering path: gallery, primary image, and a fallback.
+
+The fallback is deliberately a designed empty state tinted from the listing's slug, not
+a grey box or a broken image icon. A grid of missing images reads as a broken page; a
+grid of consistent placeholders reads as a marketplace waiting for photos.
+
+`<img>` rather than `next/image`, with the lint rule disabled and the reason recorded:
+these URLs are seller-supplied and of unknown origin, and `next/image` requires every
+host to be allow-listed in config up front, which cannot be done for arbitrary user
+input. Once uploads land and images come from one known bucket, it should become
+`next/image` for exactly the optimisation the warning is pointing at.
+
+---
+
+## 12. Deliberate omissions (to state in the README, not to silently skip)
+
+- **Photo uploads.** The rendering path is complete — gallery, primary image, designed
+  fallback — but there is no upload. It needs object storage, a signed-upload route and
+  MIME sniffing rather than extension trust, which is a self-contained piece of work.
+  HEIC from an iPhone and EXIF rotation belong with it.
+- **Duplicate detection** by perceptual hash, and **AI condition grading**.
+- **Model → spec autofill**, where choosing a known model pre-fills its storage options.
+- **Field-level drop-off analytics**, which is what would actually tell an admin that a
+  field they added is costing them listings.
+- **Internationalisation and unit systems.** `unit` is a display string today, not a
+  convertible quantity.
+- **Buyer-side facets.** The `filterable` flag is captured on every assignment and
+  carried through the form-schema contract, so the configuration to drive them already
+  exists; what is missing is the filter UI and the counting strategy. See the scaling
+  exit path in §2 — counts over `jsonb` need an expression index per key, which is the
+  first thing that would change.

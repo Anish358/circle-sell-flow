@@ -10,12 +10,14 @@ Take-home assignment. The architecture write-up lives in
 
 ## Status
 
-The seller flow works end to end: pick a category, fill a form generated entirely from
-database rows, review, publish. Validation is generated from the registry and enforced
-in the browser, in the API, and again by a Postgres trigger. Drafts survive a refresh,
-and switching category keeps the answers the new category still collects.
+End to end: browse listings, pick a category, fill a form generated entirely from
+database rows, review, publish, and see the listing on its own server-rendered page.
+Validation is generated from the registry and enforced in the browser, in the API, and
+again by a Postgres trigger. Drafts survive a refresh, switching category keeps the
+answers the new category still collects, and archiving a field removes it from new
+listings without changing what existing ones display.
 
-Still to come: the admin console, the product detail page, the homepage grid and
+Still to come: the admin console — the registry is currently edited with SQL — and
 photo uploads.
 
 ## Running it locally

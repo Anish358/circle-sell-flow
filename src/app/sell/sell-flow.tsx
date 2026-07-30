@@ -376,13 +376,13 @@ function Created({ created, categorySlug }: { created: Created; categorySlug: st
     <div className="grid gap-6 py-8">
       <div className="grid gap-2">
         <h2 className="text-xl font-semibold tracking-tight">Published</h2>
-        <p className="text-muted-foreground text-sm">
-          “{created.title}” is live. Its link is{" "}
-          <code className="bg-muted rounded px-1.5 py-0.5 text-xs">/listings/{created.slug}</code>.
-        </p>
+        <p className="text-muted-foreground text-sm">“{created.title}” is live.</p>
       </div>
       <div className="flex flex-wrap gap-3">
-        <ButtonLink href="/">Back to browse</ButtonLink>
+        <ButtonLink href={`/listings/${created.slug}`}>View listing</ButtonLink>
+        <ButtonLink variant="outline" href="/">
+          Back to browse
+        </ButtonLink>
         <ButtonLink variant="outline" href={`/sell?category=${categorySlug}`}>
           Sell another
         </ButtonLink>
