@@ -10,9 +10,11 @@ Take-home assignment. The architecture write-up lives in
 
 ## Status
 
-The data model, the inheritance resolver, the form-schema API and the single form
-renderer are in: `/sell?category=<slug>` renders any category's form from database
-rows alone. The admin console, submission, product detail page and homepage follow.
+The data model, the inheritance resolver, the form-schema API, the single form
+renderer and the validated write path are in: `/sell?category=<slug>` renders any
+category's form from database rows alone, and `POST /api/listings` validates against
+the same registry in the API and again in Postgres. The seller-flow UX, admin
+console, product detail page and homepage follow.
 
 ## Running it locally
 

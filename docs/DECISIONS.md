@@ -346,7 +346,145 @@ code.
 
 ---
 
-## 9. Deliberate omissions (to state in the README, not to silently skip)
+## 9. Phase 3 — validation, in three places, from one definition
+
+### One generator, three enforcers
+
+`buildAttributesSchema` compiles a category's resolved schema into a Zod schema. The
+API route imports it; the browser form imports the same function. There is no
+second hand-written validator to drift.
+
+The third enforcer is a **Postgres trigger** (`0005_validate_attributes.sql`) that
+validates `attributes` against the same registry rows, in SQL. It is not a duplicate
+of the _rules_ — the rules live in `fields` and `field_options`, and both enforcers
+read them — it is a duplicate of the _enforcement_, which is the point. Validation
+that lives only in the API protects only the paths that go through the API, and this
+schema will be written to by an admin console, a seed script, and whatever comes
+next.
+
+Proven by attempting nine writes in `psql`, entirely bypassing the application. All
+nine were refused: an attribute belonging to another category, one belonging to no
+field at all, a number stored as a string, a boolean as a number, a malformed date,
+a select value that is not an option, an option's _label_ where its slug belongs,
+a multi-select given a bare string, and a multi-select containing one bogus element.
+
+### The trigger validates on write, never in retrospect
+
+It considers only keys whose value actually **changed**. That single clause is what
+keeps a configuration change from retro-invalidating listings that were valid when
+written: archive an option and the listings that chose it stay editable, because
+their value did not change. Try to newly _select_ that archived option and you are
+refused.
+
+With one exception — **re-categorising a listing revalidates every attribute**,
+because the question is no longer "is this value still legal" but "does this
+category collect this field at all". Without that exception, moving a handset into
+Furniture would carry its storage and battery health along unchallenged. That was a
+real bug found by testing the trigger, not by reasoning about it.
+
+The trigger deliberately does **not** check required-ness. Completeness is a
+property of publishing, not of a row: drafts are supposed to be incomplete.
+
+### Empty, absent, and zero are three different things
+
+Decided once, in `coerceValue`:
+
+- `undefined`, `null` and `""` all mean "not answered", and a text field of nothing
+  but whitespace is trimmed into that category — otherwise `"   "` satisfies
+  "required";
+- `false` and `0` are answers, not absences;
+- `[]` from a multi-select is an answer — "none of these" — and is distinguishable
+  from never having seen the field;
+- `"1,20,000"` is a number, because Indian digit grouping is what a seller types;
+- `NaN` and `Infinity` are rejected, since both round-trip through JSON as `null`.
+
+Anything that resolves to unanswered is **omitted** from the stored object rather
+than stored as an explicit `null`, so absence stays absence in the jsonb document.
+
+A wrinkle worth recording: coercion has to wrap Zod's `.optional()`, not sit inside
+it. `.optional()` inspects the _raw_ input, so a `null` normalised to `undefined`
+inside the inner schema is still treated as present and fails its type check. Two
+tests failed on exactly this before it was fixed.
+
+### Two validation modes, one schema
+
+`mode: "draft"` skips required-field checks; `"publish"` enforces them. A draft may
+be incomplete but may not be _malformed_ — it can lack a model number, but it cannot
+store "eighty" where a number belongs. Publishing is what demands a complete answer.
+
+### Configuration is validated too
+
+An admin editing the registry is editing a schema, and a schema can be
+self-defeating in ways no single value check would catch. `validateResolvedSchema`
+rejects, at save time: a minimum above its maximum, a maximum length below its
+minimum, a non-positive step, a presentation the type cannot use, a select with no
+options, a default that violates its own field's rules, a default absent from the
+option list, a required select whose options have all been archived, a condition
+referencing a field the category does not collect, a condition against an option
+that no longer exists, contradictory `all` conditions on one field, **visibility
+cycles**, and **required fields behind conditions that can never be true**.
+
+That last one is the hardest failure to diagnose from the seller's side, because
+nothing looks wrong — the form simply cannot be submitted, forever.
+
+Full satisfiability of arbitrary conditions is not attempted, and is not claimed. The
+subset checked is the one that occurs in practice: impossible comparisons, and
+unreachability propagated along chains to a fixpoint.
+
+### The write path, in order
+
+`POST /api/listings` does exactly this: parse a narrow body → resolve the schema →
+**strip hidden values** → validate → insert. Stripping before validating is
+deliberate; required-ness is judged against the state actually submitted, not
+against the configuration in the abstract.
+
+The request body is a `strictObject` that has no `status`, `sellerId`, `slug` or
+`schemaVersion` in it. Those come from the session and the registry. A field a
+client can set is a field a client can lie about.
+
+- **Idempotency.** A double-tapped submit on a flaky connection sends the request
+  twice. A client-supplied key plus a unique constraint turns the second into a
+  lookup returning 200 rather than a second listing. Verified sequentially and with
+  four concurrent requests: one row each time.
+- **Slugs.** Two people selling an "iPhone 13" is the normal case. The first gets the
+  clean slug; later ones get a short random suffix. A counter (`-2`, `-3`) reads
+  better but needs a lock to be correct under concurrency.
+- **Stale forms.** The client sends the `config_version` it rendered against. It is
+  never trusted for validation, which always runs against the current schema, but a
+  mismatch lets the response say "this form changed while you were filling it in"
+  instead of presenting unexplained errors.
+- **Money** crosses the boundary in rupees and is stored in paise, converted in one
+  place.
+
+### Drizzle wraps driver errors
+
+Recoverable conflicts are identified by constraint name, and Drizzle wraps the
+Postgres error in a plain `Error` — so `code` and `constraint_name` live on `.cause`,
+not on the error itself. Checking the top-level object silently never matches, which
+turned a slug collision into a 500. `uniqueViolation()` walks the cause chain, in one
+place, so no call site has to know this.
+
+### Authentication is a stand-in, with the right shape
+
+`getCurrentUser()` resolves a seeded account rather than reading a session, because
+authentication is out of scope. What matters is that identity is established
+server-side and never read from a request body — so `seller_id`, `role` and `status`
+are not client-settable, and replacing this with a real session lookup changes
+nothing else.
+
+### Testing a system with no fixed schema
+
+Table-driven over field _types_ and rule shapes, never over product categories:
+those cases hold for any category anyone configures later. 118 unit tests plus 26
+integration tests against a real Postgres, covering per-type valid/invalid/coerced
+values, empty semantics, unknown-key rejection, hidden-value stripping,
+required-if, draft versus publish, every configuration rule, cycle detection,
+idempotency, slug collisions, and the trigger refusing writes that never touch the
+API.
+
+---
+
+## 10. Deliberate omissions (to state in the README, not to silently skip)
 
 Duplicate detection by perceptual hash, AI condition grading, model → spec
 autofill, field-level drop-off analytics, i18n and unit systems, HEIC decoding and

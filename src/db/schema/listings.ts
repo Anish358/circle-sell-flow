@@ -80,6 +80,13 @@ export const listings = pgTable(
      */
     schemaVersion: integer("schema_version").notNull(),
 
+    /**
+     * Supplied by the client on create. A double-tapped submit on a flaky mobile
+     * connection sends the same request twice; the unique constraint turns the
+     * second one into a lookup instead of a second listing.
+     */
+    idempotencyKey: text("idempotency_key").unique(),
+
     ...timestamps,
   },
   (t) => [
