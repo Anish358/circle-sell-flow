@@ -1,13 +1,13 @@
 import { eq } from "drizzle-orm"
-import { z } from "zod"
 
 import { db } from "@/db"
-import { listings, listingCondition, type Listing } from "@/db/schema"
+import { listings, type Listing } from "@/db/schema"
 import { uniqueViolation } from "@/lib/db-errors"
 import { randomSuffix, slugify } from "@/lib/slug"
 import { resolveFormSchema } from "@/lib/form-schema/resolve"
 import { allFields } from "@/lib/form-schema/types"
 import { validateAttributes, type FieldErrors } from "@/lib/form-schema/validation"
+import { createListingSchema, type CreateListingBody } from "./input-schema"
 
 /**
  * Creating a listing.
@@ -18,41 +18,7 @@ import { validateAttributes, type FieldErrors } from "@/lib/form-schema/validati
  * about, and this is the one route where mass assignment would be most damaging.
  */
 
-/**
- * Only the common columns a seller actually fills in, plus the category-specific
- * `attributes` object which is validated separately against the resolved schema.
- */
-const requestSchema = z.strictObject({
-  categorySlug: z.string().min(1),
-
-  title: z.string().trim().min(3).max(140),
-  description: z.string().trim().max(4000).optional(),
-
-  // Rupees from the client, paise in the database. Converting at the boundary keeps
-  // the unit unambiguous everywhere inside.
-  priceRupees: z.number().positive().max(1_000_000_000),
-
-  condition: z.literal(listingCondition.enumValues),
-  city: z.string().trim().min(1).max(80),
-
-  attributes: z.record(z.string(), z.unknown()).default({}),
-
-  /** Draft saves while incomplete; publishing demands a complete answer. */
-  publish: z.boolean().default(false),
-
-  /**
-   * The `config_version` the form was rendered against. Not trusted for
-   * validation — that always runs against the current schema — but it lets the
-   * response say "the form changed while you were filling it in" instead of
-   * presenting unexplained errors.
-   */
-  configVersion: z.number().int().optional(),
-
-  /** Makes a retried submit safe. */
-  idempotencyKey: z.string().min(8).max(200).optional(),
-})
-
-export type CreateListingInput = z.input<typeof requestSchema>
+export type CreateListingInput = CreateListingBody
 
 export type CreateListingResult =
   | { ok: true; listing: Listing; reused: boolean }
@@ -68,7 +34,7 @@ export type CreateListingResult =
     }
 
 export async function createListing(body: unknown, sellerId: string): Promise<CreateListingResult> {
-  const parsed = requestSchema.safeParse(body)
+  const parsed = createListingSchema.safeParse(body)
   if (!parsed.success) {
     return {
       ok: false,

@@ -1,6 +1,4 @@
-import Link from "next/link"
-
-import { Button } from "@/components/ui/button"
+import { ButtonLink } from "@/components/button-link"
 
 // Placeholder homepage. Replaced by the real listing grid once listings exist.
 export default function HomePage() {
@@ -13,8 +11,10 @@ export default function HomePage() {
         in it.
       </p>
       <div className="mt-8 flex gap-3">
-        <Button render={<Link href="/sell">Sell an item</Link>} />
-        <Button variant="outline" render={<Link href="/admin">Open admin console</Link>} />
+        <ButtonLink href="/sell">Sell an item</ButtonLink>
+        <ButtonLink variant="outline" href="/admin">
+          Open admin console
+        </ButtonLink>
       </div>
     </div>
   )

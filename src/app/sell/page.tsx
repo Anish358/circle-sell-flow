@@ -1,28 +1,29 @@
-import Link from "next/link"
 import type { Metadata } from "next"
 
-import { Button } from "@/components/ui/button"
+import { getCategoryTree } from "@/lib/categories"
 import { resolveFormSchema } from "@/lib/form-schema/resolve"
 import { allFields } from "@/lib/form-schema/types"
-import { AttributeForm } from "./attribute-form"
 import { CategoryPicker } from "./category-picker"
+import { SellFlow } from "./sell-flow"
 
 export const metadata: Metadata = { title: "Sell an item" }
 
 /**
- * The sell flow's category-specific step.
+ * The seller flow.
  *
- * The schema is resolved on the server and rendered by one component. Two different
- * categories produce two different forms here, and the only difference between them
- * anywhere is rows in Postgres.
+ * The category is a gate rather than a field: the form cannot exist before it is
+ * known, so it lives in the URL and the schema is resolved on the server from it.
+ * Everything after that is one renderer reading one contract.
  */
-export default async function SellPage(props: { searchParams: Promise<{ category?: string }> }) {
-  const { category } = await props.searchParams
+export default async function SellPage(props: {
+  searchParams: Promise<{ category?: string; step?: string }>
+}) {
+  const { category, step } = await props.searchParams
 
   if (!category) {
     return (
       <Shell title="What are you selling?" subtitle="Pick a category to get started.">
-        <CategoryPicker />
+        <CategoryPicker tree={await getCategoryTree()} />
       </Shell>
     )
   }
@@ -35,7 +36,7 @@ export default async function SellPage(props: { searchParams: Promise<{ category
         title="That category is not available"
         subtitle="It may have been renamed or deactivated. Pick another to continue."
       >
-        <CategoryPicker />
+        <CategoryPicker tree={await getCategoryTree()} />
       </Shell>
     )
   }
@@ -46,40 +47,42 @@ export default async function SellPage(props: { searchParams: Promise<{ category
   return (
     <Shell
       title={schema.category.name}
-      subtitle={schema.category.path.map((step) => step.name).join(" › ")}
+      subtitle={schema.category.path.map((ancestor) => ancestor.name).join(" › ")}
+      note={`${fields.length} category fields, ${inherited} inherited. Configured in the admin console, not in code.`}
     >
-      <div className="grid gap-6">
-        {/* Makes the design's central claim legible while filling the form in. */}
-        <p className="text-muted-foreground border-l-2 pl-3 text-xs leading-relaxed">
-          {fields.length} fields, {inherited} inherited from parent categories. Configured in the
-          admin console, not in code.
-        </p>
-
-        <AttributeForm schema={schema} />
-
-        <div className="flex items-center gap-3 border-t pt-6">
-          <Button disabled>Continue</Button>
-          <Button variant="ghost" size="sm" render={<Link href="/sell">Change category</Link>} />
-        </div>
-      </div>
+      <SellFlow schema={schema} initialStep={parseStep(step)} />
     </Shell>
   )
+}
+
+/** The step is mirrored in the URL so Back works; anything unrecognised starts over. */
+const STEP_IDS = ["basics", "details", "price", "review"] as const
+
+function parseStep(value: string | undefined) {
+  return STEP_IDS.find((id) => id === value) ?? "basics"
 }
 
 function Shell({
   title,
   subtitle,
+  note,
   children,
 }: {
   title: string
   subtitle: string
+  note?: string
   children: React.ReactNode
 }) {
   return (
-    <div className="mx-auto max-w-2xl px-4 py-10">
-      <header className="mb-8">
+    <div className="mx-auto max-w-2xl px-4 py-8 sm:py-10">
+      <header className="mb-6 grid gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        <p className="text-muted-foreground mt-1 text-sm">{subtitle}</p>
+        <p className="text-muted-foreground text-sm">{subtitle}</p>
+        {note ? (
+          <p className="text-muted-foreground mt-2 border-l-2 pl-3 text-xs leading-relaxed">
+            {note}
+          </p>
+        ) : null}
       </header>
       {children}
     </div>

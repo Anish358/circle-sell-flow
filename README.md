@@ -10,11 +10,13 @@ Take-home assignment. The architecture write-up lives in
 
 ## Status
 
-The data model, the inheritance resolver, the form-schema API, the single form
-renderer and the validated write path are in: `/sell?category=<slug>` renders any
-category's form from database rows alone, and `POST /api/listings` validates against
-the same registry in the API and again in Postgres. The seller-flow UX, admin
-console, product detail page and homepage follow.
+The seller flow works end to end: pick a category, fill a form generated entirely from
+database rows, review, publish. Validation is generated from the registry and enforced
+in the browser, in the API, and again by a Postgres trigger. Drafts survive a refresh,
+and switching category keeps the answers the new category still collects.
+
+Still to come: the admin console, the product detail page, the homepage grid and
+photo uploads.
 
 ## Running it locally
 

@@ -484,7 +484,94 @@ API.
 
 ---
 
-## 10. Deliberate omissions (to state in the README, not to silently skip)
+## 10. Phase 4 — the seller flow
+
+### Category is a gate, then four steps
+
+**Basics → Details → Condition & price → Review.** The category lives in the URL,
+because the form cannot exist before it is known. Photos will slot in between Basics
+and Details once uploads exist; the steps are a list, so that costs one entry.
+
+Each step validates only its own answers when the seller moves forward — demanding
+answers they have not reached yet is worse than letting them find out at the end. On
+submit, every step is re-validated **in order**, so the seller is returned to the
+earliest problem rather than the last one found.
+
+### The step is in the URL
+
+`history.pushState`, so Back goes back a step instead of leaving the form — the
+commonest way to lose a half-written listing on a mobile browser. `pushState` rather
+than a router navigation, so there is no server round trip and no risk of remounting
+the form and discarding what has been typed. A `popstate` listener keeps state and
+URL in agreement.
+
+### Drafts are in `localStorage`, and that is a stated limit
+
+No round trip per keystroke, works offline, cannot leak one seller's draft to another.
+What it gives up is drafts that follow you between devices — the natural next step, and
+one the API already supports, since `POST /api/listings` with `publish: false` stores a
+draft row today.
+
+The stored payload records the `config_version` it was written against, so a draft
+saved before an admin changed the form is recognised and the seller is told, rather
+than having stale answers silently replayed into a schema that no longer matches.
+
+### Switching category keeps the answers that still apply
+
+Fill in a handset, switch to a laptop, and Brand, Model, Storage, RAM and Battery
+Health come across; the seller is told what was kept and what does not apply. Verified
+in a real browser: six answers carried, with the laptop's own help text and
+required-ness now in force on the shared Battery Health field.
+
+This is not string matching on similar-looking names. RAM is **one field**, so an
+answer to it is meaningful in every category that assigns it — the carry-over falls
+out of the shared library rather than being a feature bolted on top of it.
+
+### Verified by driving a real browser
+
+A script attaches to headless Chromium over the DevTools Protocol — no new
+dependencies — and clicks through the flow at 390px, because a screenshot of a static
+page cannot show that a multi-step form works. It confirmed, end to end:
+
+- the conditional field appears when warranty is answered Yes and **disappears** when
+  changed to No;
+- the review step shows option **labels** rather than the slugs stored underneath,
+  `89 %` with its configured unit, and `₹32,999` with Indian digit grouping;
+- the review omits the hidden warranty field, because it will not be stored;
+- publishing succeeds, and a refresh mid-form restores both the values and the step.
+
+### Three bugs it found that no amount of reading would have
+
+- **A hydration mismatch.** Seeding form state from `localStorage` in a `useState`
+  initialiser means the server renders a pristine form and the client renders a
+  restored one. React resolves that by discarding the client tree. Restoring now
+  happens in a post-mount effect. This is why `set-state-in-effect` is disabled at
+  exactly one place, with the reasoning written next to it: the rule targets state
+  derived from props, and this is the opposite case.
+- **Broken button semantics on every link-styled button.** Base UI's `Button` assumes
+  it renders a real `<button>` and loses native semantics when handed an anchor. Fixed
+  once in a `ButtonLink` component rather than seven times, and it now cannot be
+  forgotten.
+- **A Node module in the browser bundle.** The category picker became a client
+  component and imported `@/lib/categories`, which imports the Postgres driver. The
+  module is now split: `categories/tree.ts` holds the shape and the pure functions,
+  `categories/index.ts` holds the queries. The client/server boundary is a real
+  constraint on module layout, not just on component annotations.
+
+### The one-renderer guard caught its own author
+
+The invariant test flagged seven lines of _prose_ — comments saying "on a phone"
+meaning a mobile browser, and a placeholder example naming a sofa. The guard is
+deliberately blunt: it matches category names anywhere in `src/`, including comments.
+
+Rewording four comments and one placeholder was the right response; relaxing the
+regex to ignore comments would have made the README's claim weaker in exchange for
+convenience. The placeholder is better for it too — a shared field should not carry
+an example from one category.
+
+---
+
+## 11. Deliberate omissions (to state in the README, not to silently skip)
 
 Duplicate detection by perceptual hash, AI condition grading, model → spec
 autofill, field-level drop-off analytics, i18n and unit systems, HEIC decoding and
