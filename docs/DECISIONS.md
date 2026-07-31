@@ -802,6 +802,42 @@ Cold starts remain: the first request after an idle period still pays for bootin
 function and opening a fresh connection. That is inherent to serverless on this plan and is
 not something the code can fix.
 
+### The sequel: it was not only slow, it was hanging
+
+Moving the function to Mumbai fixed the latency and uncovered a worse fault underneath.
+The deployment logs showed `Vercel Runtime Timeout Error: Task timed out after 300 seconds`
+on `/` and `/admin/categories`, a 504, and a failed homepage query — on pages that answer
+in 40ms against a local database.
+
+Two causes, and they compounded.
+
+**Connections were never released.** A serverless instance is _frozen_ after it responds,
+not torn down, and postgres.js leaves an idle connection open indefinitely because
+`idle_timeout` defaults to unset. So every frozen instance kept holding a slot in Supabase's
+pooler that it was not using. Enough concurrent invocations and every slot belonged to a
+sleeping instance; new requests then waited for a slot that would never free, and since
+`connect_timeout` was also unset they waited until the platform killed them at 300 seconds.
+The client now sets `idle_timeout` so slots are handed back, `connect_timeout` so a request
+that cannot get one fails in seconds rather than five minutes, and `max_lifetime` so a
+long-warm instance does not hold one forever.
+
+**A page of links was a page of full renders.** Next prefetches links entering the viewport,
+and for a _dynamic_ route it prefetches down to the nearest `loading` boundary. There was no
+`loading.tsx` anywhere, so nothing stopped it: every listing card scrolling into view
+prefetched a complete product page, server render and queries included. One homepage visit
+became a dozen page renders — which is what filled the pooler in the first place.
+
+Adding `loading.tsx` to each dynamic route fixes it at the framework's own seam rather than
+by turning prefetching off. Prefetch now stops at the boundary and fetches the shell, and
+the same file gives a click immediate visual feedback instead of a page that appears to do
+nothing — the symptom originally reported.
+
+Worth naming the shape of this: the region problem was making a slow thing slower, and the
+connection problem was making a broken thing invisible. The first was found by measuring,
+the second only by reading the deployment logs. Neither showed up locally, because a
+database on the same machine hides both a missing idle timeout and a dozen redundant
+renders.
+
 ---
 
 ## 14. Deliberate omissions (to state in the README, not to silently skip)
