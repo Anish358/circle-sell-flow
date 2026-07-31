@@ -29,12 +29,15 @@ export async function generateMetadata(props: {
 export default async function CategoryEditorPage(props: { params: Promise<{ slug: string }> }) {
   const { slug } = await props.params
 
-  const [category] = await db.select().from(categories).where(eq(categories.slug, slug)).limit(1)
-  if (!category) notFound()
+  // Both keyed on the slug, so neither waits for the other. The editor has to work on a
+  // deactivated category — otherwise it could never be fixed and reactivated — so a null
+  // schema is handled rather than treated as missing.
+  const [[category], schema] = await Promise.all([
+    db.select().from(categories).where(eq(categories.slug, slug)).limit(1),
+    resolveFormSchema(slug),
+  ])
 
-  // The editor has to work on a deactivated category — otherwise it could never be fixed
-  // and reactivated — so the resolver is bypassed when it declines to resolve one.
-  const schema = await resolveFormSchema(slug)
+  if (!category) notFound()
 
   const [usage, groups, ownAssignments, library, parent] = await Promise.all([
     getCategoryUsage(category.id),

@@ -1,14 +1,7 @@
-import { and, asc, desc, eq, lt, or, sql, type SQL } from "drizzle-orm"
+import { and, desc, eq, lt, or, sql, type SQL } from "drizzle-orm"
 
 import { db } from "@/db"
-import {
-  categories,
-  listingImages,
-  listings,
-  users,
-  type ListingCondition,
-  type ListingStatus,
-} from "@/db/schema"
+import { categories, listings, users, type ListingCondition, type ListingStatus } from "@/db/schema"
 
 /**
  * Reading listings — the browse and detail paths.
@@ -110,7 +103,13 @@ export async function getListingPage(
   }
 }
 
-/** One listing, with everything the detail page renders. Null when not found. */
+/**
+ * One listing, with everything the detail page renders. Null when not found.
+ *
+ * Images come back in the same query as a json aggregate rather than a second round trip.
+ * A plain join would multiply the listing row once per image and need de-duplicating; a
+ * lateral aggregate keeps it to one row and one trip.
+ */
 export async function getListingBySlug(slug: string): Promise<ListingDetail | null> {
   const [row] = await db
     .select({
@@ -131,6 +130,7 @@ export async function getListingBySlug(slug: string): Promise<ListingDetail | nu
       categorySlug: categories.slug,
       sellerId: listings.sellerId,
       sellerName: users.name,
+      images: allImages,
     })
     .from(listings)
     .innerJoin(categories, eq(categories.id, listings.categoryId))
@@ -140,11 +140,7 @@ export async function getListingBySlug(slug: string): Promise<ListingDetail | nu
 
   if (!row) return null
 
-  const images = await db
-    .select({ url: listingImages.url, alt: listingImages.alt })
-    .from(listingImages)
-    .where(eq(listingImages.listingId, row.id))
-    .orderBy(asc(listingImages.sort))
+  const images = row.images ?? []
 
   return {
     ...row,
@@ -153,6 +149,13 @@ export async function getListingBySlug(slug: string): Promise<ListingDetail | nu
     primaryImage: images[0] ?? null,
   }
 }
+
+/** Every image for the listing, in display order, as one json array. */
+const allImages = sql<Array<{ url: string; alt: string | null }> | null>`(
+  SELECT jsonb_agg(jsonb_build_object('url', i.url, 'alt', i.alt) ORDER BY i.sort, i.id)
+    FROM listing_images i
+   WHERE i.listing_id = ${listings.id}
+)`
 
 /**
  * The lowest-sorted image for each listing, as a correlated subquery.

@@ -755,7 +755,56 @@ having it.
 
 ---
 
-## 13. Deliberate omissions (to state in the README, not to silently skip)
+## 13. Performance — the function was on the wrong continent
+
+The deployed app felt sluggish on every navigation from the very first click. Measured
+rather than guessed, against an identical local run:
+
+| Route                                   | Local | Deployed | Ratio |
+| --------------------------------------- | ----- | -------- | ----- |
+| `/api/health` — a single `select now()` | 9ms   | 633ms    | 70×   |
+| `/` — one query                         | 44ms  | 761ms    | 17×   |
+| `/sell?category=…` — two queries        | 41ms  | 1353ms   | 33×   |
+
+Two things in that table identify the cause. 633ms to run `select now()` cannot be the
+query, so it is almost entirely network. And the cost scales with the _number of queries a
+page issues_ rather than with how much work they do — the signature of round-trip latency.
+
+The response headers confirmed it: `x-vercel-id: bom1::iad1::…`. The request arrives at the
+Mumbai edge, but the function **executes in `iad1` (Virginia)**, while the Supabase project
+is in `ap-south-1` (Mumbai). Every query crossed the planet and came back, roughly 200ms
+each, and a cold invocation spends several of those on the TCP and TLS handshake before the
+first query even runs.
+
+Fixed at three levels, largest first:
+
+1. **Run the function next to the database.** `vercel.json` pins the region to `bom1`, so
+   the round trip falls from ~200ms to single digits. For a marketplace whose sellers and
+   data are both in India, compute belonging in Mumbai is the right answer on its own
+   merits, not a workaround.
+2. **Stop paying for round trips that were never needed.** The form-schema resolver issued
+   its two queries _sequentially_ even though neither reads the other's result — both start
+   from the same slug. They are now issued together. The listing detail query folded its
+   images in as a json aggregate instead of a second trip, and the admin editor's category
+   lookup and schema resolution now run in parallel.
+3. **Nothing cached yet, deliberately.** Caching would have masked the latency rather than
+   removed it, and would have made the admin's live preview a correctness question. With
+   compute and data co-located the remaining per-query cost is a few milliseconds, so
+   caching becomes an optimisation to reach for if measurement still calls for it — not a
+   patch over a misplaced function.
+
+The general lesson worth keeping: latency multiplies by the number of sequential round
+trips, so "how many times does this page talk to the database, and does it have to wait
+between them?" is a more useful question than "is this query fast?". Both answers came from
+measurement — the header that named the region was the whole diagnosis.
+
+Cold starts remain: the first request after an idle period still pays for booting the
+function and opening a fresh connection. That is inherent to serverless on this plan and is
+not something the code can fix.
+
+---
+
+## 14. Deliberate omissions (to state in the README, not to silently skip)
 
 - **Photo uploads.** The rendering path is complete — gallery, primary image, designed
   fallback — but there is no upload. It needs object storage, a signed-upload route and

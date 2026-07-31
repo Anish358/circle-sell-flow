@@ -26,7 +26,12 @@ import type {
  * Returns null when the category does not exist or is deactivated.
  */
 export async function resolveFormSchema(categorySlug: string): Promise<FormSchema | null> {
-  const ancestry = await db.execute<AncestryRow>(sql`
+  // Issued together, not one after the other. Neither query reads the other's result —
+  // both start from the same slug — so awaiting them in sequence spent a whole network
+  // round trip for nothing. That is invisible when the database is next door and very
+  // visible when it is on another continent.
+  const [ancestry, rows] = await Promise.all([
+    db.execute<AncestryRow>(sql`
     WITH RECURSIVE ancestry AS (
       SELECT id, parent_id, slug, name, config_version, is_active, 0 AS distance
         FROM categories
@@ -39,18 +44,8 @@ export async function resolveFormSchema(categorySlug: string): Promise<FormSchem
     SELECT id, slug, name, config_version AS "configVersion", is_active AS "isActive", distance
       FROM ancestry
      ORDER BY distance DESC
-  `)
-
-  // Root first, requested category last — already breadcrumb order.
-  const category = ancestry.at(-1)
-  if (!category) return null
-
-  // An ancestor being deactivated does not strip its descendants' fields; it only
-  // removes the ancestor itself from the picker. Only the requested category's own
-  // status decides whether it can be sold in.
-  if (!category.isActive) return null
-
-  const rows = await db.execute<ResolvedFieldRow>(sql`
+  `),
+    db.execute<ResolvedFieldRow>(sql`
     WITH RECURSIVE ancestry AS (
       SELECT id, parent_id, slug, name, 0 AS distance
         FROM categories
@@ -116,7 +111,17 @@ export async function resolveFormSchema(categorySlug: string): Promise<FormSchem
      -- keep rendering them; that read path looks fields up by slug instead.
      WHERE f.archived_at IS NULL
      ORDER BY coalesce(g.sort, 2147483647), g.slug, r.sort, f.label
-  `)
+  `),
+  ])
+
+  // Root first, requested category last — already breadcrumb order.
+  const category = ancestry.at(-1)
+  if (!category) return null
+
+  // An ancestor being deactivated does not strip its descendants' fields; it only
+  // removes the ancestor itself from the picker. Only the requested category's own
+  // status decides whether it can be sold in.
+  if (!category.isActive) return null
 
   return {
     category: {
