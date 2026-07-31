@@ -4,6 +4,13 @@ import Link from "next/link"
 import { ActorSwitcher } from "./actor-switcher"
 import { getCurrentUser, isAdmin, listActors } from "@/lib/auth"
 
+/**
+ * A request that cannot finish in 20 seconds is not slow, it is stuck. Without this the
+ * platform default let a stuck request hold a function slot for five full minutes, which is
+ * how one bad request became several.
+ */
+export const maxDuration = 20
+
 export const metadata: Metadata = { title: { default: "Admin", template: "%s · Admin · Circle" } }
 
 /**

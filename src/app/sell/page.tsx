@@ -6,6 +6,13 @@ import { allFields } from "@/lib/form-schema/types"
 import { CategoryPicker } from "./category-picker"
 import { SellFlow } from "./sell-flow"
 
+/**
+ * A request that cannot finish in 20 seconds is not slow, it is stuck. Without this the
+ * platform default let a stuck request hold a function slot for five full minutes, which is
+ * how one bad request became several.
+ */
+export const maxDuration = 20
+
 export const metadata: Metadata = { title: "Sell an item" }
 
 /**

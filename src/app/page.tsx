@@ -3,6 +3,13 @@ import { ListingCard } from "@/components/listing-card"
 import { decodeCursor, encodeCursor, getListingPage } from "@/lib/listings/read"
 
 /**
+ * A request that cannot finish in 20 seconds is not slow, it is stuck. Without this the
+ * platform default let a stuck request hold a function slot for five full minutes, which is
+ * how one bad request became several.
+ */
+export const maxDuration = 20
+
+/**
  * Browse.
  *
  * Server-rendered, and reading only common columns — so the page that gets the most

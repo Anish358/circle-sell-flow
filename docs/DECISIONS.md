@@ -838,9 +838,61 @@ the second only by reading the deployment logs. Neither showed up locally, becau
 database on the same machine hides both a missing idle timeout and a dozen redundant
 renders.
 
+### A correction to the above: `idle_timeout` cannot do what I first claimed
+
+`idle_timeout` and `max_lifetime` are client-side timers, and **timers do not run in a frozen
+instance**. They reclaim a connection from an instance that is still awake, which is worth
+having, but they cannot reclaim one from an instance that is asleep — which is precisely the
+case that fills the pooler. Reclaiming those is the pooler's job, not the client's. The first
+version of this section over-credited them.
+
+What actually holds the line is therefore elsewhere, and the ordering matters:
+
+- **Manufacture fewer instances.** The `loading.tsx` boundaries removed roughly a dozen page
+  renders per homepage visit. That was the mechanism creating instances faster than anything
+  could recycle them, and it is the real fix.
+- **Never wait forever.** `connect_timeout` on the client and `maxDuration = 20` on every
+  route that touches the database mean a request which cannot get a connection fails in
+  seconds. Previously it held a function slot for five minutes, which is how a single stuck
+  request took later ones down with it — the difference between one slow page and an
+  unavailable site.
+- **Make failure visible.** An `error.tsx` boundary, because without one a page whose data
+  never arrives sits on its loading skeleton forever and nobody can tell "slow" from
+  "broken". That was exactly the reported symptom. Its message is deliberately generic:
+  `error.message` from a server component can carry a connection string.
+- **One less round trip per connection.** postgres.js runs a type-introspection query on
+  every new connection by default; `fetch_types: false` removes it, which matters when
+  connections are being opened often.
+
+On the observability side: the memory graph looked alarming and was not. Postgres deliberately
+fills available RAM with cache and buffers, so "433MB used" was mostly cache with the actual
+working set near 130MB, and the line was flat across the hour — no leak. The number worth
+watching was the error count on the Postgres panel, not the memory chart. Reading a metric as
+a symptom because it is large is a good way to fix the wrong thing.
+
 ---
 
-## 14. Deliberate omissions (to state in the README, not to silently skip)
+## 14. Row-level security is on, with no policies
+
+Supabase serves a REST API over the same database, reachable by anyone holding the project's
+anon key — a key designed to be shipped to browsers, and therefore not a secret. With RLS
+off, that API would read and write `listings`, `fields` and `category_fields` from outside
+the application entirely. Every guarantee the validation trigger provides would still hold
+(it is in the database), but authorization, draft privacy and the admin role check would not:
+none of them would be in the path.
+
+RLS is now enabled on all nine tables **with no policies at all**, which denies everything to
+the roles that API uses. The application is unaffected because it connects as the table owner,
+and an owner bypasses RLS.
+
+The absence of policies is the design, not an oversight: deny-by-default is correct until
+something legitimately needs to read through that API, at which point it gets a policy scoped
+to exactly that. Verified by applying the migration to an empty database and confirming both
+that RLS reports enabled on every table and that all 166 tests still pass.
+
+---
+
+## 15. Deliberate omissions (to state in the README, not to silently skip)
 
 - **Photo uploads.** The rendering path is complete — gallery, primary image, designed
   fallback — but there is no upload. It needs object storage, a signed-upload route and

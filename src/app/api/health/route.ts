@@ -3,6 +3,13 @@ import { sql } from "drizzle-orm"
 import { db } from "@/db"
 
 /**
+ * A request that cannot finish in 20 seconds is not slow, it is stuck. Without this the
+ * platform default let a stuck request hold a function slot for five full minutes, which is
+ * how one bad request became several.
+ */
+export const maxDuration = 20
+
+/**
  * Liveness check that actually touches Postgres.
  *
  * Worth having on its own merits, but its specific job here is to exercise the

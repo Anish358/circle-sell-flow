@@ -2,6 +2,13 @@ import { requireUser } from "@/lib/auth"
 import { createListing } from "@/lib/listings/create"
 
 /**
+ * A request that cannot finish in 20 seconds is not slow, it is stuck. Without this the
+ * platform default let a stuck request hold a function slot for five full minutes, which is
+ * how one bad request became several.
+ */
+export const maxDuration = 20
+
+/**
  * POST /api/listings — create a listing.
  *
  * Thin on purpose: parse the body, get the seller from the session, hand both to

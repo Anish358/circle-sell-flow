@@ -7,18 +7,24 @@ import * as schema from "./schema"
 /**
  * The database client.
  *
- * The timeouts below are not tuning — they are what keeps a serverless deployment from
- * exhausting the connection pooler and hanging.
+ * A serverless instance is **frozen** after it responds, not torn down, and its open
+ * connection keeps occupying a slot in Supabase's pooler. Enough frozen instances and every
+ * slot belongs to something asleep; new requests then wait for a slot that never frees.
  *
- * A serverless instance is **frozen** after it responds, not torn down. postgres.js leaves
- * an idle connection open indefinitely by default (`idle_timeout` is unset), so a frozen
- * instance keeps holding a pooler slot it is not using. Enough concurrent invocations —
- * a page of prefetched links is plenty — and every slot is held by a sleeping instance.
- * New invocations then wait for a slot that never frees, and because a connection attempt
- * also had no timeout, they waited until the platform killed them at 300 seconds.
+ * The important limitation to be honest about: `idle_timeout` and `max_lifetime` are
+ * client-side timers, and **timers do not run in a frozen instance**. They reclaim a
+ * connection on an instance that is still awake, which helps, but they cannot reclaim one
+ * from an instance that is asleep. There is no client-side setting that can — reclaiming
+ * those is the pooler's job.
  *
- * That is the failure the deployment logs showed: 300-second timeouts and a 504 on pages
- * that work instantly against a local database.
+ * So the durable defences are elsewhere, and they are what actually matter:
+ *
+ *   - **create fewer instances.** The prefetch fix (`loading.tsx` on every dynamic route)
+ *     removed roughly a dozen page renders per homepage visit, which was the thing
+ *     manufacturing instances faster than the pooler could recycle them.
+ *   - **never wait forever.** `connect_timeout` plus a `maxDuration` on each route means a
+ *     request that cannot get a connection fails in seconds with a visible error, instead
+ *     of occupying a function slot for five minutes and taking the next request down too.
  */
 function createClient() {
   return postgres(env.DATABASE_URL, {
@@ -26,20 +32,20 @@ function createClient() {
     // per instance would multiply slot usage for no benefit.
     max: 1,
 
-    // Give the slot back rather than sitting on it while frozen. This is the setting whose
-    // absence caused the outage.
+    // Reclaims the connection on instances that stay awake between requests. Cannot help a
+    // frozen one, as above — kept because it is free and does help the warm case.
     idle_timeout: 20,
-
-    // Fail fast and visibly instead of hanging until the platform's timeout. A request
-    // that cannot get a connection should return an error in seconds, not five minutes.
-    connect_timeout: 10,
-
-    // Recycle long-lived connections, so an instance that stays warm for hours does not
-    // hold one slot forever.
     max_lifetime: 60 * 30,
+
+    // Fail fast and visibly rather than hanging until the platform's timeout.
+    connect_timeout: 10,
 
     // Supabase's transaction-mode pooler does not support prepared statements.
     prepare: false,
+
+    // postgres.js otherwise runs an introspection query on every new connection to learn
+    // type OIDs. One extra round trip per connection, for types this app does not use.
+    fetch_types: false,
   })
 }
 

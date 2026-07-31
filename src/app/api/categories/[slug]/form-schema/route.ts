@@ -1,6 +1,13 @@
 import { resolveFormSchema } from "@/lib/form-schema/resolve"
 
 /**
+ * A request that cannot finish in 20 seconds is not slow, it is stuck. Without this the
+ * platform default let a stuck request hold a function slot for five full minutes, which is
+ * how one bad request became several.
+ */
+export const maxDuration = 20
+
+/**
  * GET /api/categories/:slug/form-schema — everything needed to render one
  * category's form, in a single call.
  *

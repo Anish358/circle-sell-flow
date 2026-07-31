@@ -13,6 +13,13 @@ import { CONDITIONS } from "@/lib/listings/input-schema"
 import { getListingBySlug, type ListingDetail } from "@/lib/listings/read"
 
 /**
+ * A request that cannot finish in 20 seconds is not slow, it is stuck. Without this the
+ * platform default let a stuck request hold a function slot for five full minutes, which is
+ * how one bad request became several.
+ */
+export const maxDuration = 20
+
+/**
  * The product detail page.
  *
  * Server-rendered, because this is the page a marketplace needs indexed — which is the
