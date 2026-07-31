@@ -372,8 +372,8 @@ async function findField(id: number) {
 
 /** Field definitions reach every category, so the whole app's caches drop. */
 function revalidateRegistry() {
-  revalidatePath("/admin", "layout")
-  revalidatePath("/sell", "layout")
+  // One call, from the root. "/" with "layout" already covers every route beneath it, so
+  // the separate /admin and /sell calls were repeating the same invalidation twice.
   revalidatePath("/", "layout")
 }
 

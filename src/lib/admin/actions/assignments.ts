@@ -329,7 +329,7 @@ async function schemaProblemFor(categorySlugOrId: number): Promise<string | null
 }
 
 function revalidateRegistry() {
-  revalidatePath("/admin", "layout")
-  revalidatePath("/sell", "layout")
+  // One call, from the root. "/" with "layout" already covers every route beneath it, so
+  // the separate /admin and /sell calls were repeating the same invalidation twice.
   revalidatePath("/", "layout")
 }

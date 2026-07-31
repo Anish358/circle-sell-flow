@@ -278,7 +278,7 @@ async function isDescendant(candidate: number, ancestor: number): Promise<boolea
  * it invalidates itself.
  */
 function revalidateAdmin() {
-  revalidatePath("/admin", "layout")
-  revalidatePath("/sell", "layout")
+  // One call, from the root. "/" with "layout" already covers every route beneath it, so
+  // the separate /admin and /sell calls were repeating the same invalidation twice.
   revalidatePath("/", "layout")
 }

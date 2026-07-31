@@ -870,6 +870,44 @@ working set near 130MB, and the line was flat across the hour — no leak. The n
 watching was the error count on the Postgres panel, not the memory chart. Reading a metric as
 a symptom because it is large is a good way to fix the wrong thing.
 
+### A second correction: removing `idle_timeout` again
+
+The failure persisted, with a sharper shape: fine on first load, broken on the next one after
+a pause, and reproducible by switching accounts in the admin console. Driving that exact
+sequence against a local database — three switch rounds and four back-to-back reloads — passed
+every time with a clean console, which ruled out the logic and pointed squarely at the
+connection.
+
+`idle_timeout` was the likely culprit, and it was mine. A frozen instance cannot run its
+timers, so the 20-second timer fires _immediately_ on thaw — potentially closing the socket at
+the moment the incoming request is writing a query to it. A request that loses that race waits
+on a dead socket. It only happens on a reused instance after a pause, which is precisely the
+reported symptom.
+
+Since the setting could never do the job it was added for, and could plausibly cause this one,
+it is gone along with `max_lifetime`. Reclaiming connections from sleeping instances belongs
+to the pooler, which has a server-side client timeout for it.
+
+Two further reductions, aimed at needing fewer connections rather than surviving their
+absence:
+
+- **`getCurrentUser` is deduplicated per request** with React's `cache`. It is called by the
+  admin layout, by every `requireAdmin` inside an action, and by the product page's
+  draft-visibility check — so one admin render made three identical round trips for the same
+  row. On a function holding a single connection those serialise, and each is another chance
+  to be the request that cannot get one.
+- **One `revalidatePath` instead of three.** Every mutation called it for `/admin`, `/sell`
+  and `/`, but `"/"` with `"layout"` already covers everything beneath it. The other two were
+  repeating the same invalidation.
+
+What this sequence is really an example of: a fix reasoned from a plausible mechanism, shipped,
+and then found to be both ineffective and harmful. The tell was that it could not work in
+principle — timers in a frozen process — which was visible before shipping it and should have
+stopped it. Local reproduction is what separated "our code is wrong" from "our environment is
+wrong", and it was worth doing before changing anything a second time.
+
+---
+
 ---
 
 ## 14. Row-level security is on, with no policies

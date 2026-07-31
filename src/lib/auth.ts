@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm"
 import { cookies } from "next/headers"
+import { cache } from "react"
 
 import { db } from "@/db"
 import { users, type User } from "@/db/schema"
@@ -24,7 +25,17 @@ const DEFAULT_ACTOR = "priya@example.com"
 
 const ACTOR_COOKIE = "circle_acting_as"
 
-export async function getCurrentUser(): Promise<User | null> {
+/**
+ * Wrapped in React's `cache` so it runs **once per request**, however many times it is
+ * asked.
+ *
+ * It is asked a lot: the admin layout, every `requireAdmin` inside an action, and the
+ * product page's draft-visibility check all call it. Without deduplication a single admin
+ * page render made three identical round trips for the same row — which on a serverless
+ * function holding one connection means three serialised waits, and three more chances to
+ * be the request that cannot get a connection.
+ */
+export const getCurrentUser = cache(async (): Promise<User | null> => {
   const store = await cookies()
   const email = store.get(ACTOR_COOKIE)?.value ?? DEFAULT_ACTOR
 
@@ -33,10 +44,11 @@ export async function getCurrentUser(): Promise<User | null> {
   // An unknown or stale cookie falls back rather than failing: it can only ever name a
   // seeded account, and the role comes from the row, never from the cookie.
   if (user) return user
+  if (email === DEFAULT_ACTOR) return null
 
   const [fallback] = await db.select().from(users).where(eq(users.email, DEFAULT_ACTOR)).limit(1)
   return fallback ?? null
-}
+})
 
 /** For routes that cannot proceed anonymously. */
 export async function requireUser(): Promise<User> {
@@ -76,6 +88,6 @@ export const actingAsCookie = ACTOR_COOKIE
 export const defaultActor = DEFAULT_ACTOR
 
 /** Everyone the demo can act as, so the role check can be seen working. */
-export async function listActors(): Promise<User[]> {
+export const listActors = cache(async (): Promise<User[]> => {
   return db.select().from(users).orderBy(users.role, users.name)
-}
+})

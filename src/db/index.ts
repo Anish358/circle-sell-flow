@@ -32,11 +32,6 @@ function createClient() {
     // per instance would multiply slot usage for no benefit.
     max: 1,
 
-    // Reclaims the connection on instances that stay awake between requests. Cannot help a
-    // frozen one, as above — kept because it is free and does help the warm case.
-    idle_timeout: 20,
-    max_lifetime: 60 * 30,
-
     // Fail fast and visibly rather than hanging until the platform's timeout.
     connect_timeout: 10,
 
@@ -46,6 +41,20 @@ function createClient() {
     // postgres.js otherwise runs an introspection query on every new connection to learn
     // type OIDs. One extra round trip per connection, for types this app does not use.
     fetch_types: false,
+
+    // Deliberately no `idle_timeout` or `max_lifetime`.
+    //
+    // Both are client-side timers, and timers do not run in a frozen instance — so they
+    // could never reclaim the connections that actually fill the pooler. Worse, they
+    // introduce a race on thaw: the timer that could not fire during the freeze fires
+    // immediately when the event loop resumes, which can close the socket at the moment
+    // the incoming request is writing a query to it. A request that loses that race waits
+    // on a dead socket.
+    //
+    // That matches the observed failure exactly — fine on first load, broken on a
+    // subsequent one after a pause — and reusing a warm connection is the common case
+    // anyway. Reclaiming connections from sleeping instances is the pooler's job, and it
+    // has its own server-side client timeout for precisely that.
   })
 }
 
