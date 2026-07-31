@@ -661,7 +661,101 @@ input. Once uploads land and images come from one known bucket, it should become
 
 ---
 
-## 12. Deliberate omissions (to state in the README, not to silently skip)
+## 12. Phase 6 — the admin console
+
+### The role check is in every action, not just the layout
+
+The admin layout refuses non-admins, but that is **not** the security boundary. A server
+action is its own callable endpoint and does not run the layout that rendered its form, so
+a layout-only gate would protect the view and leave every mutation open. Every action is
+wrapped in `withAdmin`, which means an unwrapped one stands out on sight.
+
+The console also has an "acting as" switcher, so the check can be _seen_ working: act as a
+seller and it refuses you by name, act as the admin and it opens. Note what the cookie
+holds — an email, never a role. The role is always read from the user row, so the cookie
+cannot grant a privilege the account does not have. That is the same property a real
+session id would need, which is why swapping the stand-in for real authentication changes
+nothing else.
+
+### The live preview is the real form
+
+Beside the assignment list, the category editor renders `DynamicForm` — the same component
+the seller flow uses, reading the same resolved contract. Not a mock-up, which is the whole
+point: a hand-drawn preview would be a second implementation to keep in step, and it would
+eventually lie.
+
+It is interactive rather than a static picture, because conditional fields are the one
+thing an admin cannot verify by reading the configuration. Answering "yes" to a warranty
+question and watching the expiry date appear is the only honest check.
+
+### Inherited fields are shown, not hidden
+
+An admin seeing six fields in the editor and twelve in the seller flow, with no way to
+reconcile them, would make inheritance a claim the UI never backs up. So inherited fields
+appear greyed, labelled with the category they came from, each offering "Override here" —
+which simply creates an assignment on this category and lets the resolver's
+nearest-ancestor rule make the local row win.
+
+### Every destructive action states its blast radius first
+
+"Are you sure?" is unanswerable without numbers, so archiving a field says how many
+categories stop collecting it, how many listings keep their value, and that nothing is
+deleted — the part people fear and the part that is not true here.
+
+Detaching and archiving are deliberately worded as different things, because they are:
+detaching removes one category's assignment and leaves the field for everyone else;
+archiving retires it everywhere. Two verbs, two blast radii, two confirmations.
+
+### Assignment edits are validated against the resolved schema
+
+Not against the row being edited. A cycle needs two rules, a dead required field needs a
+chain, and a condition on a missing field depends on what the category inherits — none of
+which is visible from one row. Since the resolver reads from the database, there is no way
+to ask "what would the schema be if I did this?" without doing it, so an edit that produces
+an invalid schema is applied and then rolled back with the reason returned.
+
+### Reorder is buttons, not drag-and-drop
+
+Two admins dragging at once is a lost-update race needing fractional ranking or a
+transaction that rewrites every sibling. A pair of buttons needs neither, is operable by
+keyboard and screen reader, and swaps in one transaction so it cannot half-apply. The
+trade-off is worse for reordering forty items at once, which is not something anyone does
+to a category tree.
+
+### Activity log
+
+The registry decides what sellers are asked and what listings may contain, so editing it is
+as consequential as a deploy — and a deploy has a commit history. Every mutation records
+actor, action, entity and the before/after rows. The view shows only the keys that
+_changed_, because a full row dump makes the one thing that changed impossible to find.
+
+### Proof the whole claim holds, through the UI
+
+Driven end to end in a real browser, with a clean console:
+
+1. acting as a seller, `/admin` refuses by name;
+2. switch to the admin account — the console opens;
+3. create a **brand-new field** ("Cellular", boolean, with help text) in the library form,
+   which shows its permanent derived key as you type;
+4. create a **brand-new category** ("Tablet") under an existing parent, landing straight in
+   its editor, which reports **9 fields collected, 7 of them inherited**;
+5. assign the new field and a shared one — the preview updates beside it;
+6. open `/sell?category=tablet` and the seller form offers all nine fields, the new one
+   included;
+7. the activity log shows `field.create` and `category.create`.
+
+No migration, no deploy, no code change. That is the assignment's central requirement,
+demonstrated through the interface it asks for rather than through SQL.
+
+### The one-renderer guard fired again
+
+It rejected an `e.g. Tablet` placeholder in the category-creation form. Reworded rather than
+exempted — the guard has now caught its own author twice, which is roughly the point of
+having it.
+
+---
+
+## 13. Deliberate omissions (to state in the README, not to silently skip)
 
 - **Photo uploads.** The rendering path is complete — gallery, primary image, designed
   fallback — but there is no upload. It needs object storage, a signed-upload route and

@@ -17,8 +17,12 @@ again by a Postgres trigger. Drafts survive a refresh, switching category keeps 
 answers the new category still collects, and archiving a field removes it from new
 listings without changing what existing ones display.
 
-Still to come: the admin console — the registry is currently edited with SQL — and
-photo uploads.
+The admin console is in too: category tree, field library, and a per-category assignment
+screen with a **live preview of the seller's form** beside it. Adding a category and a field
+takes a few minutes through the UI, with no migration and no deploy.
+
+Still to come: photo uploads, and buyer-side filters (the `filterable` flag is captured but
+no filter UI reads it yet).
 
 ## Running it locally
 
