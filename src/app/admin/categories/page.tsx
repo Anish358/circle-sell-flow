@@ -40,6 +40,11 @@ export default async function CategoriesPage() {
               >
                 <Link
                   href={`/admin/categories/${node.slug}`}
+                  // Not prefetched. Each editor resolves a full form schema and walks the
+                  // tree twice, so prefetching every row turned opening this list into a
+                  // dozen of the app's most expensive renders at once. An admin clicking
+                  // one row can wait for one render; nobody needs all of them speculatively.
+                  prefetch={false}
                   className="flex min-w-0 flex-1 items-center gap-2 text-sm"
                 >
                   <span className={node.isActive ? "font-medium" : "text-muted-foreground"}>
