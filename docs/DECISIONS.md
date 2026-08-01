@@ -670,12 +670,40 @@ action is its own callable endpoint and does not run the layout that rendered it
 a layout-only gate would protect the view and leave every mutation open. Every action is
 wrapped in `withAdmin`, which means an unwrapped one stands out on sight.
 
-The console also has an "acting as" switcher, so the check can be _seen_ working: act as a
-seller and it refuses you by name, act as the admin and it opens. Note what the cookie
-holds — an email, never a role. The role is always read from the user row, so the cookie
-cannot grant a privilege the account does not have. That is the same property a real
-session id would need, which is why swapping the stand-in for real authentication changes
-nothing else.
+An "acting as" switcher makes the check _visible_. Note what the cookie holds — an email,
+never a role. The role is always read from the user row, so the cookie cannot grant a
+privilege the account does not have. That is the same property a real session id would
+need, which is why swapping the stand-in for real authentication changes nothing else.
+
+### The switcher belongs in the global header, and the nav is role-aware
+
+It first sat inside the admin console, which was the wrong place twice over. A control that
+lives behind the role check cannot demonstrate the role check; and appearing only on admin
+screens, unlabelled, it read as an account menu that a marketplace had no business offering.
+
+It is now in the site header on every page, labelled "(demo)", and the nav responds to it:
+a seller is offered "Sell an item", an administrator is offered "Admin" as well. Switching
+account changes the header in place — the Admin link appears and disappears — which
+demonstrates the whole authorization story in about a second, without anyone having to
+find a refusal page.
+
+Three things that keeps honest:
+
+- **Hiding a link is not authorization.** `/admin` still refuses on the server, and every
+  mutation still re-checks inside `withAdmin`. The refusal page still exists and is still
+  reachable by typing the URL, because that is exactly what an attacker would do. The nav
+  decides what is worth showing; it decides nothing about what is allowed.
+- **The nav never claims a rule the code does not enforce.** An administrator keeps seeing
+  "Sell an item", because nothing in the API stops an admin listing something. Hiding it
+  would have the interface assert a restriction that does not exist — the same class of
+  error as a form that validates one way and an API another.
+- **Something has to resolve "who is this" regardless.** `seller_id` comes from the session
+  rather than the request body, the product page hides other people's drafts, and 7b's
+  `verified_by` records who vouched. Removing the switcher would not remove that identity,
+  only fix it to one hard-coded account and make all three untestable through the UI.
+
+The default actor is a seller, deliberately: the first thing a reviewer sees is the state
+in which the console is not offered.
 
 ### The live preview is the real form
 

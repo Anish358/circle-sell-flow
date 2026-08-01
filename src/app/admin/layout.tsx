@@ -1,8 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 
-import { ActorSwitcher } from "./actor-switcher"
-import { getCurrentUser, isAdmin, listActors } from "@/lib/auth"
+import { getCurrentUser, isAdmin } from "@/lib/auth"
 
 /**
  * A request that cannot finish in 20 seconds is not slow, it is stuck. Without this the
@@ -35,13 +34,15 @@ export const metadata: Metadata = { title: { default: "Admin", template: "%s · 
  * every mutation re-checks independently, because a server action is its own callable
  * endpoint and does not run the layout that rendered its form. A layout gate alone
  * protects the view and nothing else.
+ *
+ * The global header hides the Admin link from anyone who is not an administrator, so this
+ * page is normally unreachable by clicking. It still has to exist and still has to refuse:
+ * a hidden link is a URL anyone can type.
  */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser()
 
-  if (!isAdmin(user)) {
-    return <Denied actors={await listActors()} currentEmail={user?.email ?? null} />
-  }
+  if (!isAdmin(user)) return <Denied currentEmail={user?.email ?? null} />
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:py-8">
@@ -68,10 +69,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             </Link>
           ))}
         </nav>
-
-        <div className="ml-auto">
-          <ActorSwitcher actors={await listActors()} currentEmail={user?.email ?? null} />
-        </div>
       </div>
 
       {children}
@@ -80,16 +77,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 }
 
 /**
- * What a non-admin sees. Deliberately explains how to become one, because the whole point
- * of the switcher is to make the check demonstrable rather than an obstacle.
+ * What a non-admin sees on typing the URL directly.
+ *
+ * Reached deliberately rather than by accident, since the header offers no link to it —
+ * so it explains the refusal and points at the one control that resolves it, instead of
+ * repeating that control here.
  */
-function Denied({
-  actors,
-  currentEmail,
-}: {
-  actors: Array<{ email: string; name: string; role: string }>
-  currentEmail: string | null
-}) {
+function Denied({ currentEmail }: { currentEmail: string | null }) {
   return (
     <div className="mx-auto max-w-lg px-4 py-20">
       <h1 className="text-xl font-semibold tracking-tight">Administrators only</h1>
@@ -99,13 +93,14 @@ function Denied({
         <span className="text-foreground">{currentEmail ?? "nobody"}</span>, which is not an
         administrator.
       </p>
-      <div className="mt-6">
-        <ActorSwitcher actors={actors} currentEmail={currentEmail} />
-      </div>
+      <p className="text-muted-foreground mt-4 text-sm leading-relaxed">
+        Switch to the administrator account using <span className="text-foreground">Acting as</span>{" "}
+        in the header, and this page — and the Admin link beside it — appear.
+      </p>
       <p className="text-muted-foreground mt-6 text-xs leading-relaxed">
         Switching accounts is a demo affordance — this project does not implement authentication. It
         sets which seeded account you are, never which role: the role is always read from the user
-        row.
+        row, so the cookie cannot grant a privilege the account does not have.
       </p>
     </div>
   )
