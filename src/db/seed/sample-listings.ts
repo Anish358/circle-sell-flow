@@ -81,8 +81,8 @@ export const LISTINGS: SeedListing[] = [
     // The only listing with more than one photo, so the gallery's thumbnail row is
     // exercised by the sample data rather than only by a code path nobody runs.
     images: [
-      { url: "/sample/handset.svg", alt: "Front of the handset, screen on" },
-      { url: "/sample/handset-back.svg", alt: "Back of the handset, showing the cameras" },
+      { url: "/handset.svg", alt: "Front of the handset, screen on" },
+      { url: "/handset-back.svg", alt: "Back of the handset, showing the cameras" },
     ],
     // Checked at a hub, and the hub disagreed: the seller read 89% off the phone at
     // some point and the battery has aged since, and the charger in the box is
@@ -178,7 +178,7 @@ export const LISTINGS: SeedListing[] = [
       "purchase-date": "2024-01-20",
       "under-warranty": false,
     },
-    images: [{ url: "/sample/laptop.svg", alt: "Laptop open on a desk" }],
+    images: [{ url: "/laptop.svg", alt: "Laptop open on a desk" }],
   },
   {
     slug: "dell-xps-13-i7-16gb",
@@ -255,7 +255,7 @@ export const LISTINGS: SeedListing[] = [
       "length-cm": 204,
     },
     verifiedOn: "2026-07-30",
-    images: [{ url: "/sample/sofa.svg", alt: "Three-seater sofa, viewed from the front" }],
+    images: [{ url: "/sofa.svg", alt: "Three-seater sofa, viewed from the front" }],
   },
   {
     slug: "two-seater-leather-recliner",
@@ -304,7 +304,7 @@ export const LISTINGS: SeedListing[] = [
       "purchase-date": "2024-11-11",
       "under-warranty": false,
     },
-    images: [{ url: "/sample/handset.svg", alt: "Front of the handset" }],
+    images: [{ url: "/handset.svg", alt: "Front of the handset" }],
   },
   {
     slug: "nothing-phone-2-256gb-white",
@@ -428,7 +428,7 @@ export const LISTINGS: SeedListing[] = [
       "height-cm": 86,
       "purchase-date": "2021-11-30",
     },
-    images: [{ url: "/sample/sofa.svg", alt: "Two-seater cane sofa with cushions" }],
+    images: [{ url: "/sofa.svg", alt: "Two-seater cane sofa with cushions" }],
   },
   {
     slug: "velvet-four-seater-emerald",
