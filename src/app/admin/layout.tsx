@@ -11,6 +11,21 @@ import { getCurrentUser, isAdmin, listActors } from "@/lib/auth"
  */
 export const maxDuration = 20
 
+/**
+ * Never prerendered — and this is a deploy concern, not a caching preference.
+ *
+ * Every page here reads the database, and one of them (`/admin/audit`) touches no
+ * request-time API of its own. Without this, the build renders it to find out whether it
+ * is static, that render queries Postgres, and a database that is slow or unreachable
+ * fails the *build* — which is what took production down: the failed deploy left the
+ * previous deployment live, still holding the previous database password.
+ *
+ * A deploy must not depend on the database being fast. Declaring the subtree dynamic up
+ * front is also simply true: it is behind a per-request role check and may never be
+ * cached across users.
+ */
+export const dynamic = "force-dynamic"
+
 export const metadata: Metadata = { title: { default: "Admin", template: "%s · Admin · Circle" } }
 
 /**
