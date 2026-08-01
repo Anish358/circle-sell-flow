@@ -1482,3 +1482,69 @@ The wording is unit-tested, which is unusual and earns its place here: the failu
 is not a crash, it is a line that says `category.create` and quietly makes the log
 worthless. Two properties are asserted for every action — that nothing a person reads
 contains a raw action key or a bare id, and that no entry renders without a sentence.
+
+---
+
+## 20. Search: three boxes, one predicate, and what it deliberately is not
+
+Three lists needed finding-by-name — browse, the admin listings table, and the field
+library — and the temptation is three small implementations, each subtly different. They
+share one helper instead, because the parts that are easy to get wrong are identical.
+
+**Words, not the whole string.** A query is split on whitespace and every word must
+match, so "13 iphone" finds "Apple iPhone 13 128GB". A single `ILIKE '%13 iphone%'` would
+not, and word order is not something a person should have to think about.
+
+**Wildcards are escaped, and the escape is declared.** `%` and `_` are `LIKE`
+metacharacters and both are ordinary things to type — a buyer searching "50%" would
+otherwise match every row, and "iphone_case" would match "iphone case" by accident. The
+`ESCAPE '\\'` clause is not decoration: without it the backslash is not guaranteed to be
+treated as an escape, and the escaping silently does nothing. Both cases are covered in
+`search.db.test.ts` against a real Postgres, because a generated-SQL assertion would test
+the query builder rather than the behaviour.
+
+**Bounded input.** The term list is capped at six words of forty characters. Each term
+becomes an `ILIKE` against each searched column, and the query string is untrusted input;
+without a cap, one URL can ask for a hundred predicates.
+
+**Which columns, per surface.** Browse searches listing titles only — matching
+descriptions too would return a sofa because its description mentions the phone the
+seller upgraded to. The admin table searches title, seller name and category name,
+because an operator's question is "find Priya's sofa". The field library searches label
+and stored key, not type: the type is a badge on every row, and "find every dropdown" is
+a filter, which is a different control.
+
+**The URL is the state**, as it is for the facets — a search is shareable, survives a
+reload, and moves under the back button.
+
+**It applies as you type, after 400ms.** Waiting for Enter makes a list feel inert when
+the results are right there; navigating per keystroke is a server round trip per
+character. 400ms is long enough that an average typist finishes a word before a request
+goes out and short enough that the list reads as responding to typing — past roughly half
+a second it reads as lag, and the two seconds that felt safe when specifying it reads as
+broken. Enter still commits immediately.
+
+Typing into a URL-backed box has two consequences worth handling rather than discovering.
+**History**: starting a search pushes and refining it replaces, so the back button returns
+to the unsearched list instead of walking back through "s", "so", "sof". **Adoption**: a
+term that changes elsewhere — the back button, a link — has to appear in the box, but not
+by clobbering half-typed text, so the box compares the URL against the last term _it_
+applied to tell an external change from its own.
+
+The box also hides WebKit's native clear button (`::-webkit-search-cancel-button`).
+`type="search"` is right for the semantics and the mobile keyboard, and it draws a clear
+button that sat beside the component's own — two of them, one of which did not run the
+navigation.
+
+On browse,
+search **composes** with the category and the facets rather than replacing them, and it
+survives a category change: typing "leather" and then narrowing to Sofa is one thought,
+and clearing the words the buyer just typed would be the surprising half of it.
+
+**What this is not** is stated in the README as an omission rather than left to be
+discovered: no stemming, no relevance ranking, no typo tolerance, no index. At this
+catalogue's size it is a sequential scan over a few hundred rows; at a real one the
+answer is a `pg_trgm` GIN index for substring matching or a `tsvector` column for word
+matching, and every caller passes columns and terms and would not change. Searching
+inside `attributes` is deliberately absent for the same reason facet counts are: it is
+the external-index problem, not a missing `WHERE` clause.

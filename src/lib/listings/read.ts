@@ -2,6 +2,7 @@ import { and, desc, eq, or, sql, type SQL } from "drizzle-orm"
 
 import { db } from "@/db"
 import { categories, listings, users, type ListingCondition, type ListingStatus } from "@/db/schema"
+import { matchesAllTerms } from "@/lib/search"
 import type { AttributeFilter } from "./facets"
 
 /**
@@ -72,6 +73,12 @@ export async function getListingPage(
     categorySlug?: string
     /** Already validated against the category's registry — see `./facets`. */
     filters?: readonly AttributeFilter[]
+    /**
+     * Words a listing's title must all contain. Title only, deliberately: it is the
+     * field a buyer is actually naming, and matching descriptions too would surface an
+     * unrelated item whose description happens to mention what the seller upgraded to.
+     */
+    searchTerms?: readonly string[]
   } = {},
 ): Promise<{ listings: ListingCard[]; nextCursor: ListingCursor | null }> {
   const limit = Math.min(options.limit ?? DEFAULT_PAGE_SIZE, 60)
@@ -95,6 +102,7 @@ export async function getListingPage(
 
   const withinCategory = options.categorySlug ? inCategorySubtree(options.categorySlug) : undefined
   const matchesFilters = (options.filters ?? []).map(filterCondition)
+  const matchesSearch = matchesAllTerms(options.searchTerms ?? [], [sql`${listings.title}`])
 
   const rows = await db
     .select({
@@ -116,7 +124,9 @@ export async function getListingPage(
     .from(listings)
     .innerJoin(categories, eq(categories.id, listings.categoryId))
     // Drafts, sold and removed listings stay off the homepage.
-    .where(and(eq(listings.status, "active"), after, withinCategory, ...matchesFilters))
+    .where(
+      and(eq(listings.status, "active"), after, withinCategory, matchesSearch, ...matchesFilters),
+    )
     .orderBy(desc(listings.createdAt), desc(listings.slug))
     // One extra row is the cheapest way to know whether another page exists.
     .limit(limit + 1)

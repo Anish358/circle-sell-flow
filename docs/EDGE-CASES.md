@@ -192,6 +192,15 @@ whitespace-only titles that a naive `NOT NULL` would accept; descriptions keep t
 paragraphs with `whitespace-pre-line`; cards truncate with `line-clamp-2` so a ragged
 grid cannot read as broken.
 
+**29a. Search input is user input.** The three search boxes are `ILIKE` substring
+matching, so `%` and `_` — both ordinary things to type — are `LIKE` metacharacters:
+unescaped, a search for "50%" matches every row and "iphone_case" matches "iphone case".
+Terms are escaped with the escape character explicitly declared, since without
+`ESCAPE '\\'` the backslash is not guaranteed to be treated as one and the escaping
+silently does nothing. The word count and length are capped, because a URL is untrusted
+input and each term becomes a predicate per searched column. `search.db.test.ts` covers
+both wildcards and the backslash against a real Postgres; DECISIONS §20.
+
 **30. XSS, including the non-obvious hole.** React escapes JSX, which is why seller
 text needs no thought anywhere else — but it does **not** escape the contents of a
 `<script type="application/ld+json">` tag, so a listing titled `</script><script>…`

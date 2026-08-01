@@ -11,6 +11,7 @@ import { requireAdmin } from "@/lib/auth"
 import { resolveFormSchema } from "@/lib/form-schema/resolve"
 import { allFields } from "@/lib/form-schema/types"
 import { getListingBySlug } from "@/lib/listings/read"
+import { matchesAllTerms } from "@/lib/search"
 import { failure, success, withAdmin, type ActionResult } from "./result"
 
 /**
@@ -125,7 +126,13 @@ export type AdminListingRow = {
   attributeCount: number
 }
 
-export async function listAdminListings(): Promise<AdminListingRow[]> {
+export async function listAdminListings(
+  /**
+   * Words the listing must match, across the three things an operator has in mind when
+   * they go looking: what it is called, who is selling it, and what it is filed under.
+   */
+  terms: readonly string[] = [],
+): Promise<AdminListingRow[]> {
   // Everything exported from a `"use server"` module is a callable endpoint, reads
   // included — so this checks the role itself rather than relying on the page that
   // happens to call it.
@@ -144,6 +151,7 @@ export async function listAdminListings(): Promise<AdminListingRow[]> {
       JOIN categories c ON c.id = l.category_id
       JOIN users u ON u.id = l.seller_id
      WHERE l.status <> 'removed'
+       AND ${matchesAllTerms(terms, [sql`l.title`, sql`u.name`, sql`c.name`]) ?? sql`true`}
      ORDER BY l.created_at DESC, l.slug DESC
      LIMIT 100
   `)

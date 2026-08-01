@@ -2,7 +2,9 @@ import type { Metadata } from "next"
 import { sql } from "drizzle-orm"
 
 import { db } from "@/db"
+import { SearchBox } from "@/components/search-box"
 import { Badge } from "@/components/ui/badge"
+import { matchesAllTerms, searchTerms } from "@/lib/search"
 import { CreateFieldForm } from "./create-field-form"
 import { FieldRowActions } from "./field-row-actions"
 import { FieldOptionsEditor, type EditableOption } from "./field-options-editor"
@@ -17,7 +19,10 @@ export const metadata: Metadata = { title: "Field library" }
  * categories use it and how many listings hold a value: those numbers are the blast radius
  * of any change, and they are the reason archiving asks before it acts.
  */
-export default async function FieldsPage() {
+export default async function FieldsPage(props: { searchParams: Promise<{ q?: string }> }) {
+  const { q } = await props.searchParams
+  const terms = searchTerms(q)
+
   const rows = await db.execute<{
     id: number
     slug: string
@@ -46,6 +51,9 @@ export default async function FieldsPage() {
            (SELECT count(*)::int FROM listings l
              WHERE l.attributes ? f.slug)                      AS "listingCount"
       FROM fields f
+     -- Label and key, not type: the type is a badge on every row, and searching "select"
+     -- to find every dropdown is a filter, which is a different control.
+     WHERE ${matchesAllTerms(terms, [sql`f.label`, sql`f.slug`]) ?? sql`true`}
      ORDER BY (f.archived_at IS NOT NULL), f.label
   `)
 
@@ -53,7 +61,12 @@ export default async function FieldsPage() {
   // memory. The per-option listing count is what lets archiving state its blast radius,
   // and how a value is stored depends on the field's type: a single-select writes the
   // slug as a string, a multi-select writes it into an array.
-  const optionRows = await db.execute<EditableOption & { fieldId: number }>(sql`
+  const shownFieldIds = rows.map((row) => row.id)
+
+  const optionRows =
+    shownFieldIds.length === 0
+      ? []
+      : await db.execute<EditableOption & { fieldId: number }>(sql`
     SELECT o.id,
            o.field_id                    AS "fieldId",
            o.value_slug                  AS "valueSlug",
@@ -66,6 +79,12 @@ export default async function FieldsPage() {
                    END)                  AS "listingCount"
       FROM field_options o
       JOIN fields f ON f.id = o.field_id
+     -- Only for the fields actually on the page: with a search applied this is a handful
+     -- of rows rather than every option in the library.
+     WHERE o.field_id IN (${sql.join(
+       shownFieldIds.map((id) => sql`${id}`),
+       sql`, `,
+     )})
      ORDER BY (o.archived_at IS NOT NULL), o.sort, o.label
   `)
 
@@ -84,10 +103,26 @@ export default async function FieldsPage() {
         <header className="grid gap-1">
           <h1 className="text-lg font-semibold tracking-tight">Field library</h1>
           <p className="text-muted-foreground text-sm">
-            Fields are shared. {shared} of {rows.length} are used by more than one category — the
-            same row, not a copy, which is why renaming one is free everywhere.
+            {terms.length > 0
+              ? `${rows.length === 1 ? "1 field matches" : `${rows.length} fields match`} “${q}”.`
+              : `Fields are shared. ${shared} of ${rows.length} are used by more than one category — the same row, not a copy, which is why renaming one is free everywhere.`}
           </p>
         </header>
+
+        <SearchBox
+          query={q ? new URLSearchParams({ q }).toString() : ""}
+          label="Search fields by name or key"
+          placeholder="Search fields…"
+          className="max-w-md"
+        />
+
+        {rows.length === 0 ? (
+          <p className="text-muted-foreground rounded-lg border border-dashed px-4 py-10 text-center text-sm">
+            No field matches “{q}”. Searching looks at the name and the stored key — check the list
+            before creating one, since reusing a field is what makes an answer comparable across
+            categories.
+          </p>
+        ) : null}
 
         <ul className="grid gap-2">
           {rows.map((row) => (

@@ -170,8 +170,8 @@ assignable to any category.
 The mechanical proof that none of this is faked: a test walks `src/` and **fails the
 build if any category name appears in application code** (`tests/no-hardcoded-categories.test.ts`).
 The brief says "avoid creating separate hard-coded forms for individual categories";
-this is that prohibition enforced rather than asserted. It has caught its own author
-three times — a placeholder reading `e.g. Tablet`, and twice on a code comment — which
+this is that prohibition enforced rather than asserted. It has caught its own author five
+times — once on a placeholder reading `e.g. Tablet`, four times on a code comment — which
 is roughly the point of having it.
 
 ---
@@ -340,8 +340,14 @@ Stated rather than silently skipped, because a quiet omission reads as an oversi
   seeded accounts, but identity is resolved server-side from a cookie that can only
   name an account, roles are read from the row on every request, and every mutation
   re-checks — so replacing it with a real session lookup changes nothing else.
-- **Facet counts**, above, and free-text search: containment cannot express "contains
-  the word", and a substring scan over `jsonb` has no index to help it.
+- **Facet counts**, above. And **ranked search**: the search boxes on browse, the admin
+  listings table and the field library are `ILIKE` substring matching with every word
+  required — no stemming, no relevance ordering, no typo tolerance, and no index behind
+  them. At this size that is a scan over a few hundred rows and instant; the replacement
+  is a `pg_trgm` index for substrings or a `tsvector` column for words, and it is a swap
+  inside one file. Search also deliberately does not reach into `attributes`: containment
+  cannot express "contains the word", so searching category-specific answers is the same
+  external-index problem as facet counts.
 - **Old-slug redirects.** Listing slugs are stable and SEO-bearing; the 301 cannot
   arise yet because there is no listing-edit path.
 - **Duplicate detection** by perceptual hash, **AI condition grading**, and

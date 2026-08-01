@@ -1,6 +1,6 @@
 import Link from "next/link"
 
-import { CATEGORY_PARAM, browseUrl } from "@/lib/listings/facets"
+import { CATEGORY_PARAM, SEARCH_PARAM, browseUrl } from "@/lib/listings/facets"
 import type { CategoryNode } from "@/lib/categories/tree"
 import { cn } from "@/lib/utils"
 
@@ -17,18 +17,31 @@ import { cn } from "@/lib/utils"
  * the buyer never chose. The one exception a marketplace would eventually want is a
  * shared field surviving the move, which is exactly what the sell flow's
  * `carryOverValues` already does for answers; it is left out here as scope.
+ *
+ * A **search term does** survive, because it is not a category's property: typing a word
+ * and then narrowing to a category is one thought, and clearing what the buyer just typed
+ * would be the surprising half of it.
  */
-export function CategoryNav({ tree, current }: { tree: CategoryNode[]; current: string | null }) {
+export function CategoryNav({
+  tree,
+  current,
+  search,
+}: {
+  tree: CategoryNode[]
+  current: string | null
+  /** The active search term, carried across a category change. */
+  search: string | null
+}) {
   return (
     <nav aria-label="Categories" className="grid gap-2">
       <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Category</p>
 
       <ul className="grid gap-0.5 text-sm">
         <li>
-          <CategoryLink slug={null} name="All listings" current={current} />
+          <CategoryLink slug={null} name="All listings" current={current} search={search} />
         </li>
         {tree.map((node) => (
-          <CategoryBranch key={node.slug} node={node} current={current} depth={0} />
+          <CategoryBranch key={node.slug} node={node} current={current} search={search} depth={0} />
         ))}
       </ul>
     </nav>
@@ -38,19 +51,33 @@ export function CategoryNav({ tree, current }: { tree: CategoryNode[]; current: 
 function CategoryBranch({
   node,
   current,
+  search,
   depth,
 }: {
   node: CategoryNode
   current: string | null
+  search: string | null
   depth: number
 }) {
   return (
     <li>
-      <CategoryLink slug={node.slug} name={node.name} current={current} depth={depth} />
+      <CategoryLink
+        slug={node.slug}
+        name={node.name}
+        current={current}
+        search={search}
+        depth={depth}
+      />
       {node.children.length > 0 ? (
         <ul className="grid gap-0.5">
           {node.children.map((child) => (
-            <CategoryBranch key={child.slug} node={child} current={current} depth={depth + 1} />
+            <CategoryBranch
+              key={child.slug}
+              node={child}
+              current={current}
+              search={search}
+              depth={depth + 1}
+            />
           ))}
         </ul>
       ) : null}
@@ -62,16 +89,21 @@ function CategoryLink({
   slug,
   name,
   current,
+  search,
   depth = 0,
 }: {
   slug: string | null
   name: string
   current: string | null
+  search: string | null
   depth?: number
 }) {
   const selected = slug === current
-  // A fresh parameter set, not the current one minus a few keys: see above.
-  const params = new URLSearchParams(slug ? { [CATEGORY_PARAM]: slug } : {})
+  // Built from nothing rather than from the current parameters minus a few keys: the
+  // filters belong to the category being left, and only the search term travels.
+  const params = new URLSearchParams()
+  if (slug) params.set(CATEGORY_PARAM, slug)
+  if (search) params.set(SEARCH_PARAM, search)
 
   return (
     <Link

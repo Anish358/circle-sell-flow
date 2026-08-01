@@ -63,6 +63,8 @@ export const FACET_PREFIX = "f."
 
 export const CATEGORY_PARAM = "category"
 export const CURSOR_PARAM = "after"
+/** Free-text search over listing titles — see `@/lib/search`. */
+export const SEARCH_PARAM = "q"
 
 export function matchParam(slug: string): string {
   return `${FACET_PREFIX}${slug}`

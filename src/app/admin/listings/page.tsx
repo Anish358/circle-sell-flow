@@ -1,9 +1,11 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 
+import { SearchBox } from "@/components/search-box"
 import { Badge } from "@/components/ui/badge"
 import { listAdminListings } from "@/lib/admin/actions/listings"
 import { getCategoryTree, leafPaths } from "@/lib/categories"
+import { searchTerms } from "@/lib/search"
 import { RecategoriseDialog } from "./recategorise-dialog"
 
 export const metadata: Metadata = { title: "Listings" }
@@ -16,8 +18,11 @@ export const metadata: Metadata = { title: "Listings" }
  * correction that changes what a listing is allowed to say about itself — so it is an
  * explicit action with its blast radius stated, not an editable dropdown in a table.
  */
-export default async function AdminListingsPage() {
-  const [rows, tree] = await Promise.all([listAdminListings(), getCategoryTree()])
+export default async function AdminListingsPage(props: { searchParams: Promise<{ q?: string }> }) {
+  const { q } = await props.searchParams
+  const terms = searchTerms(q)
+
+  const [rows, tree] = await Promise.all([listAdminListings(terms), getCategoryTree()])
 
   // Only leaves are offered, for the same reason the sell flow offers only leaves: the
   // tiers above exist to hold shared fields, not to hold items.
@@ -37,9 +42,18 @@ export default async function AdminListingsPage() {
         </p>
       </header>
 
+      <SearchBox
+        query={q ? new URLSearchParams({ q }).toString() : ""}
+        label="Search listings by title, seller or category"
+        placeholder="Search by title, seller or category…"
+        className="max-w-md"
+      />
+
       {rows.length === 0 ? (
         <p className="text-muted-foreground rounded-lg border border-dashed px-4 py-10 text-center text-sm">
-          Nothing listed yet.
+          {terms.length > 0
+            ? `No listing matches “${q}”. Search looks at the title, the seller's name and the category.`
+            : "Nothing listed yet."}
         </p>
       ) : (
         <ul className="grid gap-2">
