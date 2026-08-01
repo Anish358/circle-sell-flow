@@ -30,6 +30,7 @@ function field(slug: string, extra: Partial<FormField> = {}): FormField {
     options: [],
     filterable: false,
     prominent: false,
+    verifiable: false,
     origin: { categorySlug: "root", categoryName: "Root", inherited: false },
     ...extra,
   }

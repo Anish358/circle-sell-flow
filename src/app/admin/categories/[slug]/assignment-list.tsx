@@ -139,6 +139,7 @@ export function AssignmentList({
                         groupId: row.groupId,
                         prominent: row.field.prominent,
                         filterable: row.field.filterable,
+                        verifiable: row.field.verifiable,
                       }),
                     )
                   }
@@ -273,6 +274,17 @@ function OwnRow({
           disabled={pending}
           onChange={(next) =>
             run(() => updateAssignment({ categoryId, fieldId, filterable: next }))
+          }
+        />
+        {/* Marking a field verifiable is what puts it on the hub's form — the same
+            configuration driving a third surface, without a line of new form code. */}
+        <Toggle
+          id={`verifiable-${fieldId}`}
+          label="Hub verifies"
+          checked={field.verifiable}
+          disabled={pending}
+          onChange={(next) =>
+            run(() => updateAssignment({ categoryId, fieldId, verifiable: next }))
           }
         />
 

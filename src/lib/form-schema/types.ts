@@ -81,6 +81,9 @@ export type FormField = {
   filterable: boolean
   prominent: boolean
 
+  /** The hub can measure this one, so it appears on the verification form. */
+  verifiable: boolean
+
   /**
    * Which category's assignment won. Lets the admin console render inherited
    * fields differently from a category's own, which is the difference between

@@ -19,16 +19,27 @@ import type { FieldConfig, FieldOptionView } from "@/lib/form-schema/types"
  * archived fields and archived options. Anything no longer part of the category is
  * marked `orphaned` and shown under its own heading rather than silently dropped or
  * silently mixed in.
+ *
+ * It also resolves both documents a listing can hold: the seller's claim and the hub's
+ * measurement. Where the hub measured something, that is the value the page leads with
+ * and the claim becomes context beside it.
  */
 
 export type DisplayAttribute = {
   slug: string
   label: string
   type: FieldType
-  /** The raw stored value. */
+  /** The seller's raw stored value. */
   value: unknown
-  /** The value as a person reads it. */
+  /** The seller's value as a person reads it. Empty when they did not answer. */
   display: string
+  /**
+   * What the hub measured, when it did. Null for an unverified field — which is not the
+   * same as an unverified listing: a hub checks the fields it can check.
+   */
+  verified: string | null
+  /** Both answers exist and disagree. The case worth showing, and the reason to keep both. */
+  differs: boolean
   /** Show as a headline spec rather than a table row. */
   prominent: boolean
   /**
@@ -68,8 +79,11 @@ type DisplayRow = {
 export async function resolveListingDisplay(
   categoryId: number,
   attributes: Record<string, unknown>,
+  verifiedAttributes: Record<string, unknown> = {},
 ): Promise<ListingDisplay> {
-  const slugs = Object.keys(attributes)
+  // The union of both documents: the hub can measure a field the seller left blank, and
+  // that measurement is a fact about the item whether or not anyone claimed it first.
+  const slugs = [...new Set([...Object.keys(attributes), ...Object.keys(verifiedAttributes)])]
   if (slugs.length === 0) return { highlights: [], groups: [], orphaned: [] }
 
   const rows = await db.execute<DisplayRow>(sql`
@@ -127,9 +141,9 @@ export async function resolveListingDisplay(
   const orphaned: DisplayAttribute[] = []
 
   for (const row of rows) {
-    const attribute = toAttribute(row, attributes[row.slug])
+    const attribute = toAttribute(row, attributes[row.slug], verifiedAttributes[row.slug])
     // A value that formats to nothing is not worth a row on the page.
-    if (attribute.display === "") continue
+    if (attribute.display === "" && attribute.verified === null) continue
 
     if (attribute.orphaned) {
       orphaned.push(attribute)
@@ -159,6 +173,8 @@ export async function resolveListingDisplay(
       type: "text",
       value,
       display: String(value),
+      verified: null,
+      differs: false,
       prominent: false,
       orphaned: true,
     })
@@ -167,14 +183,19 @@ export async function resolveListingDisplay(
   return { highlights, groups, orphaned }
 }
 
-function toAttribute(row: DisplayRow, value: unknown): DisplayAttribute {
+function toAttribute(row: DisplayRow, value: unknown, verifiedValue: unknown): DisplayAttribute {
   const field = { type: row.type, options: row.options, config: row.config ?? {} }
+  const display = formatAttributeValue(field, value) ?? ""
+  const verified = formatAttributeValue(field, verifiedValue)
+
   return {
     slug: row.slug,
     label: row.label,
     type: row.type,
     value,
-    display: formatAttributeValue(field, value) ?? "",
+    display,
+    verified,
+    differs: verified !== null && display !== "" && verified !== display,
     prominent: row.prominent,
     orphaned: row.orphaned,
   }

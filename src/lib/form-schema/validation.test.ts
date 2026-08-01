@@ -23,6 +23,7 @@ function field(overrides: Partial<FormField> & Pick<FormField, "type">): FormFie
     options: [],
     filterable: false,
     prominent: false,
+    verifiable: false,
     origin: { categorySlug: "root", categoryName: "Root", inherited: false },
     ...overrides,
   }

@@ -57,6 +57,7 @@ export type AssignmentInput = {
   helpText?: string | null
   filterable?: boolean
   prominent?: boolean
+  verifiable?: boolean
 }
 
 export async function attachField(input: AssignmentInput): Promise<ActionResult<null>> {
@@ -89,6 +90,7 @@ export async function attachField(input: AssignmentInput): Promise<ActionResult<
       groupId: input.groupId ?? null,
       filterable: input.filterable ?? false,
       prominent: input.prominent ?? false,
+      verifiable: input.verifiable ?? false,
     }
 
     const [created] = await db.insert(categoryFields).values(values).returning()
@@ -149,6 +151,7 @@ export async function updateAssignment(input: AssignmentInput): Promise<ActionRe
         helpText: input.helpText === undefined ? before.helpText : input.helpText || null,
         filterable: input.filterable ?? before.filterable,
         prominent: input.prominent ?? before.prominent,
+        verifiable: input.verifiable ?? before.verifiable,
       })
       .where(
         and(
@@ -172,6 +175,7 @@ export async function updateAssignment(input: AssignmentInput): Promise<ActionRe
           helpText: before.helpText,
           filterable: before.filterable,
           prominent: before.prominent,
+          verifiable: before.verifiable,
         })
         .where(
           and(

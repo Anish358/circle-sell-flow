@@ -57,6 +57,13 @@
       "when": 1785596400000,
       "tag": "0007_connection_timeouts",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785682800000,
+      "tag": "0008_verified_attributes",
+      "breakpoints": true
     }
   ]
 }

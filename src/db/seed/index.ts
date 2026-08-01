@@ -5,7 +5,7 @@ import postgres from "postgres"
 import * as schema from "@/db/schema"
 import { env } from "@/lib/env"
 import { ASSIGNMENTS, CATEGORIES, FIELDS, FIELD_GROUPS } from "./registry"
-import { LISTINGS, USERS } from "./sample-listings"
+import { ADMIN_EMAIL, LISTINGS, USERS } from "./sample-listings"
 
 /**
  * Loads the sample registry and listings.
@@ -129,6 +129,7 @@ async function seed() {
         sort: assignment.sort,
         filterable: assignment.filterable ?? false,
         prominent: assignment.prominent ?? false,
+        verifiable: assignment.verifiable ?? false,
         defaultValue: assignment.defaultValue,
         visibleWhen: assignment.visibleWhen,
         helpText: assignment.helpText,
@@ -146,6 +147,11 @@ async function seed() {
       ).map((row) => [row.slug, row.version]),
     )
 
+    // The hub inspector, for the sample verifications. Provenance is a foreign key,
+    // not a label — the database refuses a verified value that cannot name who
+    // recorded it.
+    const verifierId = idFor(userIds, ADMIN_EMAIL, "user")
+
     await tx.insert(schema.listings).values(
       LISTINGS.map((listing) => ({
         slug: listing.slug,
@@ -159,6 +165,11 @@ async function seed() {
         city: listing.city,
         status: listing.status,
         attributes: listing.attributes,
+        verifiedAttributes: listing.verifiedAttributes ?? {},
+        verifiedAt: listing.verifiedAttributes
+          ? new Date(`${listing.verifiedOn}T11:00:00+05:30`)
+          : null,
+        verifiedBy: listing.verifiedAttributes ? verifierId : null,
         schemaVersion: versions.get(listing.category) ?? 1,
       })),
     )

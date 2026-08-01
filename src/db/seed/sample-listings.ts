@@ -25,6 +25,14 @@ type SeedListing = {
   city: string
   status: ListingStatus
   attributes: Record<string, unknown>
+  /**
+   * What the hub measured, keyed by the same slugs. Present only on listings that
+   * have been through a hub, and deliberately disagreeing with the seller on a couple
+   * of fields — an agreeing verification proves nothing about the interface.
+   */
+  verifiedAttributes?: Record<string, unknown>
+  /** ISO date the hub checked it. Ignored unless `verifiedAttributes` is set. */
+  verifiedOn?: string
 }
 
 export const USERS: SeedUser[] = [
@@ -61,6 +69,17 @@ export const LISTINGS: SeedListing[] = [
       "under-warranty": false,
       "known-issues": "Small scuff on the bottom-left corner. Does not affect the screen.",
     },
+    // Checked at a hub, and the hub disagreed: the seller read 89% off the phone at
+    // some point and the battery has aged since, and the charger in the box is
+    // third-party. Both numbers are kept and the product page shows the difference.
+    verifiedAttributes: {
+      storage: "128gb",
+      ram: "4gb",
+      "battery-health": 86,
+      "original-box": true,
+      accessories: ["cable"],
+    },
+    verifiedOn: "2026-07-24",
   },
   {
     slug: "samsung-galaxy-s22-256gb-green",
@@ -86,6 +105,16 @@ export const LISTINGS: SeedListing[] = [
       "under-warranty": true,
       "warranty-expiry": "2027-02-10",
     },
+    // A verification that agrees with the seller on everything it checked, and left
+    // the accessories unchecked. Partial is normal: the badge means "we looked", not
+    // "we looked at all of it".
+    verifiedAttributes: {
+      storage: "256gb",
+      ram: "8gb",
+      "battery-health": 96,
+      "original-box": true,
+    },
+    verifiedOn: "2026-07-28",
   },
   {
     slug: "oneplus-11r-128gb-black",
@@ -203,6 +232,13 @@ export const LISTINGS: SeedListing[] = [
       "purchase-date": "2022-06-12",
       "known-issues": "Slight fading on the arm that faced the window.",
     },
+    // Measured with a tape rather than remembered: 6 cm longer than the seller thought,
+    // which is the difference between fitting through a doorway and not.
+    verifiedAttributes: {
+      material: "fabric",
+      "length-cm": 204,
+    },
+    verifiedOn: "2026-07-30",
   },
   {
     slug: "two-seater-leather-recliner",

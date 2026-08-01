@@ -48,6 +48,11 @@ type SeedAssignment = {
   filterable?: boolean
   /** Show as a headline spec on the product page rather than in the details table. */
   prominent?: boolean
+  /**
+   * The hub can measure this one on arrival, so it appears on the verification form
+   * and the product page can show a measured value beside the seller's claim.
+   */
+  verifiable?: boolean
   defaultValue?: unknown
   /**
    * Shape: { all | any: [{ field, op, value }] }, where `field` is another
@@ -327,6 +332,11 @@ export const FIELDS: SeedField[] = [
 /**
  * Assignments. Read the `category` column: most rows point at an ancestor, not a
  * leaf, which is what makes adding a sibling category nearly free.
+ *
+ * `verifiable` is the same idea applied to the hub: what an inspector can put a number
+ * on differs by category — storage and battery health are measurable on a device, the
+ * seller's account of why they are selling is not — so it is a property of the
+ * assignment, and the verification form is generated from it.
  */
 export const ASSIGNMENTS: SeedAssignment[] = [
   // ── Electronics (root) — reaches Mobile Phone and Laptop, two levels down ──
@@ -355,6 +365,7 @@ export const ASSIGNMENTS: SeedAssignment[] = [
     required: true,
     prominent: true,
     filterable: true,
+    verifiable: true,
     sort: 10,
   },
   {
@@ -363,6 +374,7 @@ export const ASSIGNMENTS: SeedAssignment[] = [
     group: "specifications",
     required: true,
     filterable: true,
+    verifiable: true,
     sort: 20,
   },
   {
@@ -373,10 +385,20 @@ export const ASSIGNMENTS: SeedAssignment[] = [
     required: true,
     prominent: true,
     filterable: true,
+    // ...and the hub measures it on arrival, which is the number a buyer most wants
+    // somebody other than the seller to have checked.
+    verifiable: true,
     sort: 30,
   },
-  { category: "mobile-phone", field: "original-box", group: "history", sort: 50 },
-  { category: "mobile-phone", field: "accessories", group: "history", sort: 60 },
+  { category: "mobile-phone", field: "original-box", group: "history", verifiable: true, sort: 50 },
+  {
+    category: "mobile-phone",
+    field: "accessories",
+    group: "history",
+    // The hub can see what is in the box, which is exactly the claim buyers dispute.
+    verifiable: true,
+    sort: 60,
+  },
   // Nearest ancestor wins: Electronics assigns Purchase Date as optional, and
   // this row overrides it for handsets specifically.
   {
@@ -394,6 +416,7 @@ export const ASSIGNMENTS: SeedAssignment[] = [
     group: "specifications",
     required: true,
     prominent: true,
+    verifiable: true,
     sort: 10,
   },
   {
@@ -403,6 +426,7 @@ export const ASSIGNMENTS: SeedAssignment[] = [
     required: true,
     prominent: true,
     filterable: true,
+    verifiable: true,
     sort: 20,
   },
   {
@@ -411,6 +435,7 @@ export const ASSIGNMENTS: SeedAssignment[] = [
     group: "specifications",
     required: true,
     filterable: true,
+    verifiable: true,
     sort: 30,
   },
   { category: "laptop", field: "graphics-card", group: "specifications", sort: 40 },
@@ -437,6 +462,9 @@ export const ASSIGNMENTS: SeedAssignment[] = [
     required: true,
     prominent: true,
     filterable: true,
+    // Leather or faux is the claim a buyer cannot check from a photograph, and the one
+    // an inspector can settle in a second.
+    verifiable: true,
     sort: 10,
   },
   {
@@ -450,7 +478,16 @@ export const ASSIGNMENTS: SeedAssignment[] = [
   },
   { category: "sofa", field: "cushion-firmness", group: "comfort", sort: 30 },
   { category: "sofa", field: "pet-friendly", group: "comfort", filterable: true, sort: 40 },
-  { category: "sofa", field: "length-cm", group: "dimensions", required: true, sort: 10 },
+  {
+    category: "sofa",
+    field: "length-cm",
+    group: "dimensions",
+    required: true,
+    // Measured with a tape at the hub. "Will it fit through my door" is not a question
+    // to answer from the seller's memory.
+    verifiable: true,
+    sort: 10,
+  },
   { category: "sofa", field: "width-cm", group: "dimensions", required: true, sort: 20 },
   { category: "sofa", field: "height-cm", group: "dimensions", required: true, sort: 30 },
 ]

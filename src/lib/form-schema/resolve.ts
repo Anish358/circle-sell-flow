@@ -67,6 +67,7 @@ export async function resolveFormSchema(categorySlug: string): Promise<FormSchem
              cf.help_text AS assignment_help_text,
              cf.filterable,
              cf.prominent,
+             cf.verifiable,
              a.distance,
              a.slug AS origin_slug,
              a.name AS origin_name
@@ -87,6 +88,7 @@ export async function resolveFormSchema(categorySlug: string): Promise<FormSchem
            r.visible_when                                 AS "visibleWhen",
            r.filterable,
            r.prominent,
+           r.verifiable,
            r.distance,
            r.origin_slug                                  AS "originSlug",
            r.origin_name                                  AS "originName",
@@ -173,6 +175,7 @@ function toFormField(row: ResolvedFieldRow): FormField {
     options: row.options,
     filterable: row.filterable,
     prominent: row.prominent,
+    verifiable: row.verifiable,
     origin: {
       categorySlug: row.originSlug,
       categoryName: row.originName,
@@ -203,6 +206,7 @@ type ResolvedFieldRow = {
   visibleWhen: VisibilityRule | null
   filterable: boolean
   prominent: boolean
+  verifiable: boolean
   distance: number
   originSlug: string
   originName: string

@@ -1039,7 +1039,107 @@ that RLS reports enabled on every table and that all 166 tests still pass.
 
 ---
 
-## 15. Deliberate omissions (to state in the README, not to silently skip)
+## 15. Seller-claimed versus hub-verified attributes
+
+Circle takes possession of every item between listing and delivery. For part of its
+life a listing therefore holds two answers to the same question — what the seller said,
+and what the hub measured — and the interesting product decision is what to do with the
+second one.
+
+### Two documents, never an overwrite
+
+`listings.verified_attributes` is a second `jsonb` object with the same shape and the
+same slug keys as `attributes`. The seller's claim is never touched.
+
+The tempting alternative — correct the listing in place and log the old value — is
+worse in the way that matters: it destroys the comparison. "89% verified, seller stated
+92%" tells a buyer something that neither number alone does, and it is the only
+presentation that stays honest when the two disagree. Overwriting silently converts a
+disagreement into a platform assertion.
+
+The product page leads with the measurement and shows the claim beneath it wherever
+they differ. `additionalProperty` in the JSON-LD publishes the measured value too,
+because structured data is a claim made to third parties and should carry the
+best-evidenced answer available.
+
+### Provenance is a constraint, not a column you hope gets filled
+
+```sql
+CHECK ((verified_at IS NULL AND verified_by IS NULL AND verified_attributes = '{}')
+       OR (verified_at IS NOT NULL AND verified_by IS NOT NULL))
+```
+
+A verified value that cannot name who recorded it and when is just a claim in a
+stronger typeface — the exact thing this feature exists to replace. There is no third
+state, `verified_by` is `ON DELETE RESTRICT` so deleting an account cannot anonymise a
+measurement, and clearing a verification returns the row to wholly unverified rather
+than leaving a badge over an empty record.
+
+### `verifiable` is on the assignment, like everything else contextual
+
+What a hub can measure differs by category: battery health on a device, yes; the
+seller's account of why they are selling, no. So it joins `required`, `sort`,
+`prominent` and `filterable` on `category_fields` and inherits down the tree by the
+same nearest-ancestor rule. Marking a field "Hub verifies" in the category editor is
+what makes it appear on the verification form — no deploy, exactly as for the sell form.
+
+### The third surface, and why it cost almost nothing
+
+The hub's screen renders `<DynamicForm>`. Not a similar component: the same one the
+seller fills in and the same one the category editor previews. The verification schema
+is the seller's resolved schema passed through one pure function, and the whole feature
+needed no new form code, no new validator and no new storage shape.
+
+That is the strongest single piece of evidence for the original design. A capability
+nobody planned for turned out to be a filter over rows that already existed.
+
+Two subtleties in that filter, both in `verifiableFields`:
+
+- **Visibility is resolved against the seller's answers, then discarded.** A warranty
+  expiry the seller was never asked for is not a measurement the hub can take. Having
+  decided that once, the surviving fields carry no `visibleWhen` — their conditions may
+  point at fields the hub is not asked about, and a condition on an absent field
+  evaluates to hidden, which would hide the very field just admitted.
+- **The seller's obligations do not carry across.** `required` and `defaultValue` are
+  stripped: a partial verification is a normal outcome, and a default would be the
+  platform asserting a measurement nobody took. For the same reason the inputs start
+  empty rather than pre-filled with the claim — pre-filling turns verification into a
+  click-through.
+
+### The write path is the sell path
+
+`recordVerification` coerces, validates and rejects unknown keys through
+`validateAttributes`, in `draft` mode. One generator, now four enforcers.
+
+It adds one check of its own: only fields the winning assignment marks `verifiable` are
+accepted, so a console bug cannot reach a category's whole attribute set through this
+route. `verified_*` is not settable from a seller request either — `createListingSchema`
+is a `strictObject`, so those keys are a 400 rather than something quietly ignored.
+
+### What the trigger checks, and what it deliberately does not
+
+Migration 0008 lifts the attribute check into `listing_attribute_violation(...)` and
+runs `verified_attributes` through the identical function: active field, collected by
+this category, type match, live option. One definition rather than two that drift.
+
+It does **not** check the `verifiable` flag. That is policy belonging to the winning
+assignment, in the same family as `required`, and this trigger has never judged policy —
+only well-formedness and membership. Encoding it would also mean un-marking a field as
+verifiable retro-invalidates every listing already verified on it, which is the
+retrospective validation the design refuses everywhere else. Policy is enforced on write
+by the application, where inheritance and conditional visibility are available to
+evaluate it against.
+
+### A rendering decision the screenshots forced
+
+The queue first showed "_n_ of _m_ checked". Un-mark a field as verifiable after a
+verification and that reads "5 of 4" — honest data rendered as a bug. It now shows
+"_n_ checked" with "_m_ left" only when there is something left, which stays true in
+every state the configuration can reach.
+
+---
+
+## 16. Deliberate omissions (to state in the README, not to silently skip)
 
 - **Photo uploads.** The rendering path is complete — gallery, primary image, designed
   fallback — but there is no upload. It needs object storage, a signed-upload route and

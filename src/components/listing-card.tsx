@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { BadgeCheckIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { formatPrice } from "@/lib/form-schema/format"
@@ -40,11 +41,21 @@ export function ListingCard({ listing }: { listing: Listing }) {
             <span aria-hidden="true">·</span>
             <span>{listing.categoryName}</span>
           </p>
-          {condition ? (
-            <Badge variant="secondary" className="mt-1 w-fit text-xs font-normal">
-              {condition.label}
-            </Badge>
-          ) : null}
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            {condition ? (
+              <Badge variant="secondary" className="w-fit text-xs font-normal">
+                {condition.label}
+              </Badge>
+            ) : null}
+            {/* One boolean from a common column, so the browse grid still reads no
+                attributes. What was measured is the product page's job. */}
+            {listing.verifiedAt ? (
+              <Badge className="w-fit gap-1 text-xs font-normal">
+                <BadgeCheckIcon className="size-3" aria-hidden="true" />
+                Verified
+              </Badge>
+            ) : null}
+          </div>
         </div>
       </Link>
     </article>

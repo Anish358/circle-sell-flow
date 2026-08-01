@@ -21,6 +21,12 @@ The admin console is in too: category tree, field library, and a per-category as
 screen with a **live preview of the seller's form** beside it. Adding a category and a field
 takes a few minutes through the UI, with no migration and no deploy.
 
+Listings also carry what a Circle hub measured, separately from what the seller claimed.
+Mark a field **Hub verifies** on its assignment and it appears on the hub's verification
+form — the same `<DynamicForm>`, filtered — and the product page then shows
+_"Battery Health 86% ✓ Verified · seller stated 89%"_. The seller's answers are never
+overwritten, and the database refuses a verified value that cannot name who recorded it.
+
 Still to come: photo uploads, and buyer-side filters (the `filterable` flag is captured but
 no filter UI reads it yet).
 

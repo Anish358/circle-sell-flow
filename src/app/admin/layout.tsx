@@ -50,6 +50,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           {[
             { href: "/admin/categories", label: "Categories" },
             { href: "/admin/fields", label: "Field library" },
+            { href: "/admin/verification", label: "Verification" },
             { href: "/admin/audit", label: "Activity" },
           ].map((item) => (
             <Link

@@ -32,11 +32,16 @@ export type AuditAction =
   | "assignment.attach"
   | "assignment.update"
   | "assignment.detach"
+  // Not a registry change, but the same argument applies with more force: a verified
+  // value is the platform vouching for something, and it has to be traceable to whoever
+  // vouched.
+  | "listing.verified"
+  | "listing.verification_cleared"
 
 export async function recordAudit(entry: {
   actorId: string | null
   action: AuditAction
-  entityType: "category" | "field" | "field_option" | "assignment"
+  entityType: "category" | "field" | "field_option" | "assignment" | "listing"
   entityId: string | number
   before?: unknown
   after?: unknown

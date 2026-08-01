@@ -66,6 +66,16 @@ export const categoryFields = pgTable(
     /** Show as a headline spec on the product page rather than in the details table. */
     prominent: boolean().notNull().default(false),
 
+    /**
+     * The hub can measure this one, so it appears on the verification form and the
+     * product page can show a measured value beside the seller's claim.
+     *
+     * Contextual like everything else here: battery health is measurable on a device
+     * and meaningless on a couch, and that is a fact about the assignment rather than
+     * about the field.
+     */
+    verifiable: boolean().notNull().default(false),
+
     ...timestamps,
   },
   (t) => [

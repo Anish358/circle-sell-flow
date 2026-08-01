@@ -7,6 +7,7 @@ import {
   jsonb,
   pgTable,
   text,
+  timestamp,
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core"
@@ -73,6 +74,27 @@ export const listings = pgTable(
     attributes: jsonb().notNull().default({}),
 
     /**
+     * What the hub measured, keyed by the same field slugs.
+     *
+     * A second document rather than an overwrite, because the seller's claim and the
+     * platform's measurement are different facts and a buyer wants both: "89%,
+     * verified" beats "89%", and "89% verified, seller said 92%" beats either. Only
+     * fields whose assignment is marked `verifiable` may appear here.
+     */
+    verifiedAttributes: jsonb("verified_attributes").notNull().default({}),
+
+    /** When the hub recorded the values above. Null while unverified. */
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+
+    /**
+     * Who recorded them. `restrict` on purpose: deleting the account must not turn an
+     * attributed measurement into an anonymous one.
+     */
+    verifiedBy: uuid("verified_by").references((): AnyPgColumn => users.id, {
+      onDelete: "restrict",
+    }),
+
+    /**
      * The category's `config_version` at the moment this was submitted. Records
      * which shape of the schema the seller actually answered, which is what makes
      * "the config changed after this was listed" a describable situation rather
@@ -92,6 +114,16 @@ export const listings = pgTable(
   (t) => [
     slugCheck("listings_slug_format", t.slug),
     jsonObjectCheck("listings_attributes_is_object", t.attributes),
+    jsonObjectCheck("listings_verified_attributes_is_object", t.verifiedAttributes),
+
+    // Either wholly unverified, or verified with both a time and an actor. A verified
+    // value that cannot say who stood behind it is the unfalsifiable claim this whole
+    // feature exists to replace, so the database refuses to hold one.
+    check(
+      "listings_verified_provenance",
+      sql`(${t.verifiedAt} IS NULL AND ${t.verifiedBy} IS NULL AND ${t.verifiedAttributes} = '{}'::jsonb)
+          OR (${t.verifiedAt} IS NOT NULL AND ${t.verifiedBy} IS NOT NULL)`,
+    ),
 
     // Positive, and bounded well below anything a real marketplace would take.
     check("listings_price_positive", sql`${t.pricePaise} > 0 AND ${t.pricePaise} <= 100000000000`),
@@ -108,6 +140,11 @@ export const listings = pgTable(
     index("listings_category_id_created_at_idx").on(t.categoryId, t.createdAt.desc()),
 
     index("listings_seller_id_idx").on(t.sellerId),
+
+    // The verification queue reads only the unverified ones, newest first.
+    index("listings_unverified_idx")
+      .on(t.createdAt.desc())
+      .where(sql`${t.verifiedAt} IS NULL`),
 
     /**
      * `jsonb_ops`, deliberately, not the smaller and faster `jsonb_path_ops`.

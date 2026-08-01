@@ -22,6 +22,8 @@ export type ListingCard = {
   categoryName: string
   categorySlug: string
   primaryImage: { url: string; alt: string | null } | null
+  /** Null while unverified. Cards show only that it happened, not what was measured. */
+  verifiedAt: Date | null
 }
 
 export type ListingDetail = ListingCard & {
@@ -31,6 +33,9 @@ export type ListingDetail = ListingCard & {
   /** Needed to decide who may view a draft. */
   sellerId: string
   attributes: Record<string, unknown>
+  /** What the hub measured, keyed by the same field slugs. Empty while unverified. */
+  verifiedAttributes: Record<string, unknown>
+  verifiedByName: string | null
   schemaVersion: number
   categoryId: number
   sellerName: string
@@ -80,6 +85,7 @@ export async function getListingPage(
       createdAt: listings.createdAt,
       categoryName: categories.name,
       categorySlug: categories.slug,
+      verifiedAt: listings.verifiedAt,
       imageUrl: primaryImageUrl,
       imageAlt: primaryImageAlt,
     })
@@ -123,6 +129,9 @@ export async function getListingBySlug(slug: string): Promise<ListingDetail | nu
       city: listings.city,
       status: listings.status,
       attributes: listings.attributes,
+      verifiedAttributes: listings.verifiedAttributes,
+      verifiedAt: listings.verifiedAt,
+      verifiedByName: verifierName,
       schemaVersion: listings.schemaVersion,
       createdAt: listings.createdAt,
       categoryId: listings.categoryId,
@@ -145,10 +154,21 @@ export async function getListingBySlug(slug: string): Promise<ListingDetail | nu
   return {
     ...row,
     attributes: (row.attributes ?? {}) as Record<string, unknown>,
+    verifiedAttributes: (row.verifiedAttributes ?? {}) as Record<string, unknown>,
     images,
     primaryImage: images[0] ?? null,
   }
 }
+
+/**
+ * Who recorded the verification, as a correlated subquery.
+ *
+ * A second join to `users` would need an alias — the seller is already joined — and
+ * this reads more plainly for a column that is null on most rows.
+ */
+const verifierName = sql<string | null>`(
+  SELECT u.name FROM users u WHERE u.id = ${listings.verifiedBy}
+)`
 
 /** Every image for the listing, in display order, as one json array. */
 const allImages = sql<Array<{ url: string; alt: string | null }> | null>`(
@@ -187,6 +207,7 @@ function toCard(row: {
   createdAt: Date
   categoryName: string
   categorySlug: string
+  verifiedAt: Date | null
   imageUrl: string | null
   imageAlt: string | null
 }): ListingCard {
@@ -200,6 +221,7 @@ function toCard(row: {
     createdAt: row.createdAt,
     categoryName: row.categoryName,
     categorySlug: row.categorySlug,
+    verifiedAt: row.verifiedAt,
     primaryImage: row.imageUrl ? { url: row.imageUrl, alt: row.imageAlt } : null,
   }
 }
