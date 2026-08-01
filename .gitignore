@@ -24,6 +24,11 @@
 .DS_Store
 *.pem
 
+# agent scaffolding — Next writes AGENTS.md itself, so it has to be excluded
+# rather than only deleted
+AGENTS.md
+CLAUDE.md
+
 # debug
 npm-debug.log*
 yarn-debug.log*

@@ -7,8 +7,8 @@ engineer's zero deploys.
 
 **Demo:** https://circle-sell-flow.vercel.app · there is no login — use the
 **Acting as** control in the header to switch between `admin@circle.example` (sees
-the admin console) and the two seeded sellers. **Local setup:** [SETUP.md](SETUP.md),
-five commands. **Full decision log:** [docs/DECISIONS.md](docs/DECISIONS.md).
+the admin console) and the two seeded sellers. **Running it locally is five
+commands:** [below](#running-it-locally).
 
 ---
 
@@ -178,9 +178,7 @@ is roughly the point of having it.
 
 ## Decisions, with what was rejected
 
-The full log with the reasoning is [docs/DECISIONS.md](docs/DECISIONS.md) (18
-sections, written as the work happened rather than reconstructed afterwards). The
-load-bearing ones:
+The load-bearing ones, each with what it was chosen over:
 
 ### Storage: `jsonb`, and the integrity bought back
 
@@ -251,8 +249,6 @@ verify, browse filters, product page) with one contract and no new form code.
 
 ## Edge cases, handled rather than avoided
 
-The full 41-item sweep is in [docs/EDGE-CASES.md](docs/EDGE-CASES.md), each item
-either handled with a pointer to the code and its test, or deferred with a reason.
 The ones worth reading are the config-lifecycle group, because they are where a
 runtime-editable schema either holds up or quietly corrupts data:
 
@@ -359,23 +355,78 @@ Stated rather than silently skipped, because a quiet omission reads as an oversi
 
 ---
 
+## Running it locally
+
+Requires **Node 20.9+** and **Docker** for the local Postgres. If you already have a
+Postgres, skip `db:up` and point `DATABASE_URL` at it — nothing in the schema needs an
+extension or anything Supabase-specific.
+
+```bash
+npm ci
+cp .env.example .env      # defaults already match the Docker Postgres below
+npm run db:up             # Postgres 17 on :54322, waits until healthy
+npm run db:migrate        # plain SQL migrations, in order
+npm run db:seed           # sample categories, fields and 17 listings
+npm run dev               # http://localhost:3000
+```
+
+`cp .env.example .env` is genuinely step two, not a formality: **`npm run build` fails
+without `DATABASE_URL` set**, because the API route modules import the database client
+and the client validates its environment at import time. The variable has to be present
+and well-formed; it does not have to point at a database that is running — the build
+never connects, deliberately, so a deploy cannot fail because Postgres is slow.
+
+**Sample data.** `npm run db:seed` is destructive and re-runnable: it truncates every
+table and reloads, so the database always ends in the same known state — six categories
+in two trees, 22 fields, 28 assignments, and 17 listings across the three leaf
+categories, including one draft, one sold, five with hub verifications and five with
+photos. Everything it does is an `INSERT`; there is no DDL anywhere in it, which is the
+whole claim the project makes. It prints the design as numbers on the way out: how many
+fields each category inherits rather than declares, and which fields are shared rather
+than duplicated.
+
+**Accounts.** There is no authentication (see above). The **Acting as** control switches
+between the seeded accounts:
+
+| Account                | Role   | What it can do                          |
+| ---------------------- | ------ | --------------------------------------- |
+| `admin@circle.example` | admin  | Everything, including the admin console |
+| `priya@example.com`    | seller | Browse and sell (the default)           |
+| `rahul@example.com`    | seller | Browse and sell                         |
+
+The switcher sets which account you are; it never sets a role. The role is read from the
+user row on every request, so the cookie cannot grant a privilege the account does not
+have — `/admin` refuses a seller who types the URL, and every mutation re-checks
+independently of the page that rendered it.
+
+**Deploying.** Vercel functions and Supabase Postgres must be in the same region: with
+functions in Virginia and the database in Mumbai, a single `SELECT now()` took 633 ms
+against 9 ms locally, so `vercel.json` pins `regions: ["bom1"]`. The app uses the
+transaction pooler (port 6543, hence `prepare: false`) and migrations use the session
+pooler (5432), which keeps the session state a transaction pooler does not. Migrations
+run as part of `vercel-build`, so the deployed schema can never lag the deployed code;
+seeding does not, because it truncates — that has to stay a deliberate act.
+
 ## Tests
 
 ```bash
-npm test        # 179 unit tests — pure logic, no database. Runs on a bare clone
-npm run test:db #  79 integration tests — against a real, seeded Postgres
+npm test        # 97 unit tests — pure logic, no database. Runs on a bare clone
+npm run test:db # 26 integration tests — against a real, seeded Postgres
 ```
 
-Split deliberately: a reviewer can clone and run `npm test` immediately, while the
-tests whose substance _is_ a recursive CTE or a Postgres trigger run against a real
-database, because a mocked version of them would prove nothing.
+Split deliberately: a reviewer can clone and run `npm test` immediately, while the tests
+whose substance _is_ a recursive CTE or a Postgres trigger run against a real database,
+because a mocked version of them would prove nothing.
 
-They are table-driven over **field types** rather than over categories — testing
-"Mobile Phone renders correctly" would be testing the sample data, and the whole
-claim is that no code knows what a Mobile Phone is. The rest cover the genuinely
-tricky logic: conditional visibility, required-if, hidden-value stripping, cycle
-rejection, unknown-key rejection, config validation, archive-in-use, orphaned values
-after a config change, idempotent creation, and the invariant test above.
+Six files, aimed at the parts where being wrong would be silent rather than at coverage.
+The generated validation is table-driven over **field types** rather than over categories
+— testing "Mobile Phone renders correctly" would be testing the sample data, and the
+whole claim is that no code knows what a Mobile Phone is. The rest are the genuinely
+tricky pieces: conditional visibility and hidden-value stripping, the config validator
+that rejects visibility cycles and required-fields-behind-impossible-conditions, the
+recursive-CTE resolver and nearest-ancestor override, the write path (unknown keys,
+non-live options, mass assignment, idempotent creation), and the one-renderer invariant
+above.
 
 ## Stack
 
@@ -392,9 +443,6 @@ the server.
 ## Layout
 
 ```
-SETUP.md            how to run it, and how it is deployed
-docs/DECISIONS.md   the decision log, written as the work happened
-docs/EDGE-CASES.md  41 cases, each handled or deferred with a reason
 drizzle/            generated SQL migrations, committed and reviewed
 src/app/            routes — browse, sell, listing, admin, API
 src/components/     ui/ is shadcn; form/ is the one renderer

@@ -101,7 +101,8 @@ export const FIELDS: SeedField[] = [
     label: "Brand",
     type: "single_select",
     renderAs: "dropdown",
-    // One shared vocabulary is the cost of one shared field — see DECISIONS.md.
+    // Brands from every category in one list: the cost of one shared field is one
+    // shared vocabulary. Splitting it would mean two fields and two filters.
     options: [
       { slug: "apple", label: "Apple" },
       { slug: "samsung", label: "Samsung" },
