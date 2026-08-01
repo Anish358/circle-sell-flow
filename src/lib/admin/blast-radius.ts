@@ -1,6 +1,11 @@
 import { sql } from "drizzle-orm"
 
 import { db } from "@/db"
+import { resolveFormSchema } from "@/lib/form-schema/resolve"
+import { allFields } from "@/lib/form-schema/types"
+import { missingRequiredFields } from "@/lib/listings/completeness"
+import { resolveListingDisplay } from "@/lib/listings/display"
+import { getListingBySlug } from "@/lib/listings/read"
 
 /**
  * What a configuration change will affect, before it is made.
@@ -78,6 +83,50 @@ export async function getOptionUsage(fieldSlug: string, valueSlug: string): Prom
         OR attributes -> ${fieldSlug} @> to_jsonb(${valueSlug}::text)
   `)
   return { listingCount: row?.count ?? 0 }
+}
+
+/**
+ * How many existing listings would not satisfy a field if it became required.
+ *
+ * The most consequential-looking change an admin can make that is, deliberately, not
+ * consequential at all: **requiring a field never invalidates a listing that already
+ * exists.** Validation happens on write, so those rows stay live and stay valid, and the
+ * field is simply asked for from now on.
+ *
+ * That is the right behaviour and the wrong thing to leave unsaid — an admin ticking the
+ * box has every reason to fear they have just broken 400 listings. So the number is shown
+ * first, alongside what will actually happen to them, which is nothing.
+ *
+ * Counted across the subtree because assignments inherit downward: requiring a field on a
+ * tier requires it of every category beneath it.
+ */
+export type RequiredImpact = {
+  /** Listings in this category or beneath it. */
+  listingCount: number
+  /** Of those, how many hold no value for the field. */
+  missingCount: number
+}
+
+export async function getRequiredImpact(
+  categoryId: number,
+  fieldSlug: string,
+): Promise<RequiredImpact> {
+  const [row] = await db.execute<RequiredImpact>(sql`
+    WITH RECURSIVE subtree AS (
+      SELECT id FROM categories WHERE id = ${categoryId}
+      UNION
+      SELECT c.id FROM categories c JOIN subtree s ON c.parent_id = s.id
+    )
+    SELECT count(*)::int                                            AS "listingCount",
+           count(*) FILTER (WHERE NOT (attributes ? ${fieldSlug}))::int AS "missingCount"
+      FROM listings
+     WHERE category_id IN (SELECT id FROM subtree)
+       -- Removed listings are nobody's problem; drafts are, because they are the ones
+       -- a seller is about to publish into the new rule.
+       AND status <> 'removed'
+  `)
+
+  return row ?? { listingCount: 0, missingCount: 0 }
 }
 
 export type CategoryUsage = {
@@ -182,6 +231,86 @@ export async function getReparentImpact(
   `)
 
   return { gained, lost, affectedListingCount: row?.count ?? 0 }
+}
+
+/**
+ * What moving one listing to another category would do to its answers.
+ *
+ * This is the one blast radius in the console where something is genuinely **lost**, and
+ * the difference from every other case is worth being precise about. Archiving a field or
+ * detaching it from a category keeps every stored value — the product page shows them
+ * under "Additional details". Re-categorising cannot: the database refuses to hold an
+ * attribute the listing's category does not collect, and the attribute trigger
+ * deliberately revalidates *every* key when `category_id` changes rather than only the
+ * changed ones. Otherwise a listing moved somewhere with nothing in common would keep
+ * asserting measurements its new category has no concept of, and the row would describe a
+ * thing that does not exist.
+ *
+ * So the values that do not carry over have to be dropped as part of the move, and the
+ * only honest interface is one that names them — with their formatted values — before
+ * anyone commits. The audit row keeps the attributes as they were, so the drop is
+ * recoverable by a human even though it is not undoable by a click.
+ *
+ * Note what survives: anything the target also collects. That falls out of the shared
+ * field library rather than being coded here — Purchase Date sits on both roots, so a
+ * listing keeps it across a move between them, for the same reason a half-finished draft
+ * keeps its answers when the seller changes category.
+ */
+export type RecategoriseImpact = {
+  fromName: string
+  toName: string
+  /** Answers the target category also collects. Untouched by the move. */
+  kept: Array<{ slug: string; label: string; display: string }>
+  /** Answers the target does not collect. Removed as part of the move. */
+  dropped: Array<{ slug: string; label: string; display: string }>
+  /** Required there, and unanswered here. Informational: the listing stays live. */
+  missingRequired: Array<{ slug: string; label: string }>
+}
+
+export async function getRecategoriseImpact(
+  listingSlug: string,
+  targetCategorySlug: string,
+): Promise<RecategoriseImpact | null> {
+  const listing = await getListingBySlug(listingSlug)
+  if (!listing) return null
+
+  // Neither reads the other's result: one resolves the destination's schema, the other
+  // renders this listing's current answers into labels and display strings.
+  const [target, display] = await Promise.all([
+    resolveFormSchema(targetCategorySlug),
+    resolveListingDisplay(listing.categoryId, listing.attributes, listing.verifiedAttributes),
+  ])
+  if (!target) return null
+
+  const targetFields = allFields(target)
+  const collected = new Set(targetFields.map((field) => field.slug))
+
+  const held = [...display.groups.flatMap((group) => group.attributes), ...display.orphaned].map(
+    (attribute) => ({
+      slug: attribute.slug,
+      label: attribute.label,
+      // The hub's measurement where there is one, since that is what the page leads with.
+      display: attribute.verified ?? attribute.display,
+    }),
+  )
+
+  const kept = held.filter((attribute) => collected.has(attribute.slug))
+  const dropped = held.filter((attribute) => !collected.has(attribute.slug))
+
+  const survivingValues = Object.fromEntries(
+    Object.entries(listing.attributes).filter(([slug]) => collected.has(slug)),
+  )
+
+  return {
+    fromName: listing.categoryName,
+    toName: target.category.name,
+    kept,
+    dropped,
+    missingRequired: missingRequiredFields(targetFields, survivingValues).map((field) => ({
+      slug: field.slug,
+      label: field.label,
+    })),
+  }
 }
 
 /**

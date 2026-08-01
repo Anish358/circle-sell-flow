@@ -37,6 +37,9 @@ export type AuditAction =
   // vouched.
   | "listing.verified"
   | "listing.verification_cleared"
+  // The only action that removes stored answers, which makes the `before` document here
+  // the sole surviving copy of them.
+  | "listing.recategorise"
 
 export async function recordAudit(entry: {
   actorId: string | null

@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth"
 import { createListing } from "@/lib/listings/create"
+import { listingCreateLimiter } from "@/lib/rate-limit"
 
 /**
  * A request that cannot finish in 20 seconds is not slow, it is stuck. Without this the
@@ -18,6 +19,21 @@ export const maxDuration = 20
  */
 export async function POST(request: Request) {
   const seller = await requireUser()
+
+  // After authentication, so the key is an identity rather than a spoofable header, and
+  // before reading the body, so a flood costs a JSON parse of nothing.
+  const rate = listingCreateLimiter(seller.id)
+  if (!rate.ok) {
+    return Response.json(
+      {
+        error: {
+          code: "rate_limited",
+          message: "Too many listings created just now. Try again in a moment.",
+        },
+      },
+      { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
+    )
+  }
 
   let body: unknown
   try {

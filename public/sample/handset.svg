@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" width="800" height="600">
+  <!-- Illustrative sample artwork, drawn here rather than photographed: this project has
+       no photo upload, and inventing product photography would be dressing a demo up as
+       something it is not. Line art makes the image path real without pretending. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e8f0fb" />
+      <stop offset="100%" stop-color="#d7e3f5" />
+    </linearGradient>
+  </defs>
+  <rect width="800" height="600" fill="url(#bg)" />
+  <g fill="none" stroke="#40506b" stroke-width="6" stroke-linejoin="round">
+    <rect x="316" y="112" width="168" height="336" rx="26" fill="#f7fafe" />
+    <rect x="336" y="146" width="128" height="252" rx="8" fill="#dfe9f7" stroke-width="4" />
+    <line x1="376" y1="128" x2="424" y2="128" stroke-width="8" stroke-linecap="round" />
+    <circle cx="400" cy="424" r="12" stroke-width="4" />
+  </g>
+  <g fill="#40506b" opacity="0.35">
+    <circle cx="356" cy="176" r="7" />
+    <rect x="352" y="200" width="96" height="8" rx="4" />
+    <rect x="352" y="220" width="64" height="8" rx="4" />
+  </g>
+</svg>

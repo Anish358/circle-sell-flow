@@ -6,6 +6,7 @@ import { z } from "zod"
 
 import { db } from "@/db"
 import { categoryFields } from "@/db/schema"
+import { getRequiredImpact, type RequiredImpact } from "@/lib/admin/blast-radius"
 import { recordAudit } from "@/lib/admin/audit"
 import { validateResolvedSchema } from "@/lib/form-schema/config-validation"
 import { resolveFormSchema } from "@/lib/form-schema/resolve"
@@ -207,6 +208,29 @@ export async function updateAssignment(input: AssignmentInput): Promise<ActionRe
  * the product page shows it under "Additional details". This is not archiving, and the
  * confirmation the UI shows says so in those words.
  */
+/**
+ * What making a field required would mean for the listings that already exist.
+ *
+ * Read-only, and called from the toggle before anything is written, so the admin sees the
+ * number while they can still change their mind. The answer is nearly always reassuring —
+ * nothing is re-validated — but "nearly always reassuring" is not the same as "safe to
+ * leave unsaid".
+ */
+export async function previewRequired(input: {
+  categoryId: number
+  fieldId: number
+}): Promise<ActionResult<RequiredImpact & { fieldLabel: string }>> {
+  return withAdmin(async () => {
+    const [row] = await db.execute<{ slug: string; label: string }>(sql`
+      SELECT f.slug, f.label FROM fields f WHERE f.id = ${input.fieldId}
+    `)
+    if (!row) return failure("That field no longer exists.")
+
+    const impact = await getRequiredImpact(input.categoryId, row.slug)
+    return success({ ...impact, fieldLabel: row.label })
+  })
+}
+
 export async function detachField(input: {
   categoryId: number
   fieldId: number

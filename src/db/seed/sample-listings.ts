@@ -33,6 +33,15 @@ type SeedListing = {
   verifiedAttributes?: Record<string, unknown>
   /** ISO date the hub checked it. Ignored unless `verifiedAttributes` is set. */
   verifiedOn?: string
+  /**
+   * Photos, in display order — the first is the primary one.
+   *
+   * Line-art SVGs served from `public/sample`, not photographs. There is no upload path
+   * (a stated gap), and inventing product photography would dress the demo up as
+   * something it is not. Most listings deliberately have none, because the designed
+   * "no photo yet" state is a real state on a marketplace and worth seeing.
+   */
+  images?: Array<{ url: string; alt: string }>
 }
 
 export const USERS: SeedUser[] = [
@@ -69,6 +78,12 @@ export const LISTINGS: SeedListing[] = [
       "under-warranty": false,
       "known-issues": "Small scuff on the bottom-left corner. Does not affect the screen.",
     },
+    // The only listing with more than one photo, so the gallery's thumbnail row is
+    // exercised by the sample data rather than only by a code path nobody runs.
+    images: [
+      { url: "/sample/handset.svg", alt: "Front of the handset, screen on" },
+      { url: "/sample/handset-back.svg", alt: "Back of the handset, showing the cameras" },
+    ],
     // Checked at a hub, and the hub disagreed: the seller read 89% off the phone at
     // some point and the battery has aged since, and the charger in the box is
     // third-party. Both numbers are kept and the product page shows the difference.
@@ -163,6 +178,7 @@ export const LISTINGS: SeedListing[] = [
       "purchase-date": "2024-01-20",
       "under-warranty": false,
     },
+    images: [{ url: "/sample/laptop.svg", alt: "Laptop open on a desk" }],
   },
   {
     slug: "dell-xps-13-i7-16gb",
@@ -239,6 +255,7 @@ export const LISTINGS: SeedListing[] = [
       "length-cm": 204,
     },
     verifiedOn: "2026-07-30",
+    images: [{ url: "/sample/sofa.svg", alt: "Three-seater sofa, viewed from the front" }],
   },
   {
     slug: "two-seater-leather-recliner",
@@ -259,6 +276,210 @@ export const LISTINGS: SeedListing[] = [
       "width-cm": 95,
       "height-cm": 102,
       "purchase-date": "2023-08-01",
+    },
+  },
+  // ── Enough of a catalogue that browse and the filters have something to do ──
+  // Spread across every leaf, every condition and several cities, and chosen so each
+  // facet actually partitions the set: three storage tiers, four RAM sizes, battery
+  // health from 78 to 100, both sofa materials, and pet-friendly on both sides.
+  {
+    slug: "google-pixel-7a-128gb-charcoal",
+    category: "mobile-phone",
+    seller: "rahul@example.com",
+    title: "Pixel 7a 128GB, charcoal",
+    description: "Great camera, stock Android. Screen protector on since day one.",
+    priceRupees: 19_500,
+    condition: "excellent",
+    city: "Chennai",
+    status: "active",
+    attributes: {
+      brand: "google",
+      model: "Pixel 7a",
+      colour: "Charcoal",
+      storage: "128gb",
+      ram: "8gb",
+      "battery-health": 94,
+      "original-box": true,
+      accessories: ["cable", "case"],
+      "purchase-date": "2024-11-11",
+      "under-warranty": false,
+    },
+    images: [{ url: "/sample/handset.svg", alt: "Front of the handset" }],
+  },
+  {
+    slug: "nothing-phone-2-256gb-white",
+    category: "mobile-phone",
+    seller: "priya@example.com",
+    title: "Nothing Phone (2) 256GB, white",
+    description: "Bought on release. Everything works; the glass back has a hairline mark.",
+    priceRupees: 27_000,
+    condition: "good",
+    city: "Bengaluru",
+    status: "active",
+    attributes: {
+      brand: "nothing",
+      model: "Phone (2)",
+      colour: "White",
+      storage: "256gb",
+      ram: "12gb",
+      "battery-health": 88,
+      "original-box": true,
+      accessories: ["charger", "cable"],
+      "purchase-date": "2023-12-02",
+      "under-warranty": false,
+      "known-issues": "Hairline mark on the glass back, not visible in a case.",
+    },
+  },
+  {
+    slug: "apple-iphone-15-256gb-blue",
+    category: "mobile-phone",
+    seller: "rahul@example.com",
+    title: "iPhone 15 256GB, blue — sealed spare",
+    description: "Won it in a company raffle and already have a phone. Never opened.",
+    priceRupees: 61_000,
+    condition: "new",
+    city: "Mumbai",
+    status: "active",
+    attributes: {
+      brand: "apple",
+      model: "iPhone 15",
+      colour: "Blue",
+      storage: "256gb",
+      ram: "6gb",
+      "battery-health": 100,
+      "original-box": true,
+      accessories: ["cable", "bill"],
+      "purchase-date": "2025-06-20",
+      "under-warranty": true,
+      "warranty-expiry": "2026-06-20",
+    },
+    // A hub can open a "sealed" box; that is rather the point of the hub. It matched.
+    verifiedAttributes: {
+      storage: "256gb",
+      "battery-health": 100,
+      "original-box": true,
+      accessories: ["cable", "bill"],
+    },
+    verifiedOn: "2026-07-31",
+  },
+  {
+    slug: "lenovo-thinkpad-t14-i5-16gb",
+    category: "laptop",
+    seller: "priya@example.com",
+    title: "ThinkPad T14, i5 / 16GB",
+    description: "Ex-work machine, wiped and reinstalled. The keyboard is the reason to buy it.",
+    priceRupees: 39_000,
+    condition: "fair",
+    city: "Pune",
+    status: "active",
+    attributes: {
+      brand: "lenovo",
+      model: "ThinkPad T14 Gen 2",
+      processor: "intel-core-i5",
+      ram: "16gb",
+      storage: "512gb",
+      "graphics-card": "integrated",
+      "battery-health": 78,
+      ports: ["usb-a", "usb-c", "hdmi", "ethernet", "headphone-jack"],
+      "purchase-date": "2021-07-19",
+      "under-warranty": false,
+      "known-issues": "Battery holds about three hours now. Lid has workplace asset stickers.",
+    },
+  },
+  {
+    slug: "hp-pavilion-14-ryzen-8gb",
+    category: "laptop",
+    seller: "rahul@example.com",
+    title: "HP Pavilion 14, Ryzen 5 / 8GB",
+    description: "First laptop, used for coursework. Upgrading for a new job.",
+    priceRupees: 27_500,
+    condition: "good",
+    city: "Hyderabad",
+    status: "active",
+    attributes: {
+      brand: "hp",
+      model: "Pavilion 14-ec1",
+      processor: "amd-ryzen-5",
+      ram: "8gb",
+      storage: "512gb",
+      "graphics-card": "integrated",
+      ports: ["usb-a", "usb-c", "hdmi", "sd-card", "headphone-jack"],
+      "purchase-date": "2022-08-14",
+      "under-warranty": false,
+    },
+  },
+  {
+    slug: "cane-two-seater-with-cushions",
+    category: "sofa",
+    seller: "priya@example.com",
+    title: "Cane two-seater with cushions",
+    description: "Light enough to move alone. Cushion covers are washable and go with it.",
+    priceRupees: 9_800,
+    condition: "good",
+    city: "Chennai",
+    status: "active",
+    attributes: {
+      material: "cane",
+      "seating-capacity": 2,
+      "cushion-firmness": "soft",
+      "pet-friendly": true,
+      "length-cm": 142,
+      "width-cm": 74,
+      "height-cm": 86,
+      "purchase-date": "2021-11-30",
+    },
+    images: [{ url: "/sample/sofa.svg", alt: "Two-seater cane sofa with cushions" }],
+  },
+  {
+    slug: "velvet-four-seater-emerald",
+    category: "sofa",
+    seller: "rahul@example.com",
+    title: "Velvet four-seater, emerald",
+    description: "Bought for a flat we have now left. Deep and very comfortable.",
+    priceRupees: 34_000,
+    condition: "like_new",
+    city: "Mumbai",
+    status: "active",
+    attributes: {
+      material: "velvet",
+      "seating-capacity": 4,
+      "cushion-firmness": "soft",
+      "pet-friendly": false,
+      "length-cm": 246,
+      "width-cm": 96,
+      "height-cm": 88,
+      "purchase-date": "2024-05-05",
+      "known-issues": "One cushion cover has a small pull in the pile.",
+    },
+    // Measured because "will it fit" is the question a photo cannot answer, and the
+    // seller's memory was two centimetres out.
+    verifiedAttributes: {
+      material: "velvet",
+      "length-cm": 248,
+    },
+    verifiedOn: "2026-07-29",
+  },
+  {
+    slug: "leather-recliner-single-tan",
+    category: "sofa",
+    seller: "priya@example.com",
+    title: "Single leather recliner, tan",
+    description: "The reading chair. Reclines smoothly, leather has softened nicely.",
+    priceRupees: 12_500,
+    condition: "excellent",
+    city: "Bengaluru",
+    // Sold, so it stays off browse but its page still resolves — the state a shared
+    // link lands on most often.
+    status: "sold",
+    attributes: {
+      material: "leather",
+      "seating-capacity": 1,
+      "cushion-firmness": "medium",
+      "pet-friendly": true,
+      "length-cm": 88,
+      "width-cm": 92,
+      "height-cm": 104,
+      "purchase-date": "2022-02-18",
     },
   },
   {

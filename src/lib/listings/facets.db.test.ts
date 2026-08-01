@@ -96,6 +96,7 @@ describe("category browsing", () => {
 describe("attribute filters", () => {
   it("matches a single-select value by containment", async () => {
     expect(await slugs("mobile-phone", { "f.ram": "8gb" })).toEqual([
+      "google-pixel-7a-128gb-charcoal",
       "oneplus-11r-128gb-black",
       "samsung-galaxy-s22-256gb-green",
     ])
@@ -105,17 +106,26 @@ describe("attribute filters", () => {
     const anyRam = await slugs("mobile-phone", { "f.ram": "4gb,8gb" })
     const andStorage = await slugs("mobile-phone", { "f.ram": "4gb,8gb", "f.storage": "128gb" })
 
-    expect(anyRam).toHaveLength(3)
-    expect(andStorage).toEqual(["apple-iphone-13-128gb-midnight", "oneplus-11r-128gb-black"])
+    expect(anyRam).toHaveLength(4)
+    expect(andStorage).toEqual([
+      "apple-iphone-13-128gb-midnight",
+      "google-pixel-7a-128gb-charcoal",
+      "oneplus-11r-128gb-black",
+    ])
+    // Adding a facet can only narrow: every result still satisfies the first one.
+    expect(anyRam).toEqual(expect.arrayContaining(andStorage))
   })
 
   it("filters a number by range", async () => {
     expect(await slugs("mobile-phone", { "f.battery-health.min": "90" })).toEqual([
+      "apple-iphone-15-256gb-blue",
+      "google-pixel-7a-128gb-charcoal",
       "oneplus-11r-128gb-black",
       "samsung-galaxy-s22-256gb-green",
     ])
     expect(await slugs("mobile-phone", { "f.battery-health.max": "90" })).toEqual([
       "apple-iphone-13-128gb-midnight",
+      "nothing-phone-2-256gb-white",
     ])
   })
 
@@ -126,18 +136,25 @@ describe("attribute filters", () => {
 
     expect(await slugs("laptop", { "f.battery-health.min": "0" })).toEqual([
       "apple-macbook-air-m2-16gb-512gb",
+      "lenovo-thinkpad-t14-i5-16gb",
     ])
+    expect((await slugs("laptop")).length).toBeGreaterThan(2)
   })
 
   it("filters a boolean", async () => {
     expect(await slugs("sofa", { "f.pet-friendly": "true" })).toEqual([
+      "cane-two-seater-with-cushions",
       "two-seater-leather-recliner",
     ])
-    expect(await slugs("sofa", { "f.pet-friendly": "true,false" })).toHaveLength(2)
+    // Both sides selected is not a filter at all, and must not silently exclude a
+    // listing that answered either way.
+    expect(await slugs("sofa", { "f.pet-friendly": "true,false" })).toEqual(await slugs("sofa"))
   })
 
   it("ignores a value the registry no longer offers, and keeps the rest", async () => {
-    expect(await slugs("mobile-phone", { "f.ram": "8gb,999gb" })).toHaveLength(2)
+    expect(await slugs("mobile-phone", { "f.ram": "8gb,999gb" })).toEqual(
+      await slugs("mobile-phone", { "f.ram": "8gb" }),
+    )
     expect(await slugs("mobile-phone", { "f.ram": "999gb" })).toEqual(await slugs("mobile-phone"))
   })
 
@@ -165,15 +182,23 @@ describe("a filter appearing because an admin ticked a box", () => {
     // Containment reaches inside the stored array: "includes a case" needs no
     // different operator from "is 8 GB", and uses the same index.
     expect(await slugs("mobile-phone", { "f.accessories": "case" })).toEqual([
+      "google-pixel-7a-128gb-charcoal",
       "samsung-galaxy-s22-256gb-green",
     ])
-    expect(await slugs("mobile-phone", { "f.accessories": "charger" })).toHaveLength(3)
+    expect(await slugs("mobile-phone", { "f.accessories": "charger" })).toEqual([
+      "apple-iphone-13-128gb-midnight",
+      "nothing-phone-2-256gb-white",
+      "oneplus-11r-128gb-black",
+      "samsung-galaxy-s22-256gb-green",
+    ])
   })
 
   it("facets a date as a range", async () => {
     await setFilterable("mobile-phone", "purchase-date", true)
 
     expect(await slugs("mobile-phone", { "f.purchase-date.min": "2024-01-01" })).toEqual([
+      "apple-iphone-15-256gb-blue",
+      "google-pixel-7a-128gb-charcoal",
       "oneplus-11r-128gb-black",
       "samsung-galaxy-s22-256gb-green",
     ])
@@ -187,18 +212,25 @@ describe("paging a filtered view", () => {
       readSelections(buildFacets(schema!), { "f.storage": "128gb,256gb" }),
     )
 
-    const first = await getListingPage({ categorySlug: "mobile-phone", filters, limit: 1 })
+    // Every handset in the sample data holds one of those two capacities, so the
+    // filtered set is the whole category and the page boundary is the only variable.
+    const whole = await getListingPage({ categorySlug: "mobile-phone", filters, limit: 50 })
+    expect(whole.listings.length).toBeGreaterThan(2)
+
+    const first = await getListingPage({ categorySlug: "mobile-phone", filters, limit: 2 })
     expect(first.nextCursor).not.toBeNull()
 
     const second = await getListingPage({
       categorySlug: "mobile-phone",
       filters,
-      limit: 5,
+      limit: 50,
       cursor: first.nextCursor!,
     })
 
     const seen = [...first.listings, ...second.listings].map((listing) => listing.slug)
+    // Nothing repeated across the boundary, and nothing lost at it — the two halves
+    // reassemble into exactly the unpaged result, in the same order.
     expect(new Set(seen).size).toBe(seen.length)
-    expect(seen).toHaveLength(3)
+    expect(seen).toEqual(whole.listings.map((listing) => listing.slug))
   })
 })

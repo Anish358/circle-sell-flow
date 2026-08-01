@@ -61,6 +61,22 @@ export function validateFieldDefinition(field: FieldDefinition): ConfigIssue[] {
     at("non_positive_step", "Step must be greater than zero.")
   }
 
+  // A step that does not divide the range makes the stated maximum unreachable: with
+  // 0–100 in steps of 3, a browser's number input refuses 100 and the seller is left
+  // fighting a control that will not accept the value the label promises.
+  if (min !== undefined && max !== undefined && step !== undefined && step > 0) {
+    const span = max - min
+    // Modulo on floats is unreliable — 0.3 % 0.1 is not 0 — so compare the rounded
+    // number of steps against the exact one within a tolerance.
+    const steps = span / step
+    if (Math.abs(steps - Math.round(steps)) > 1e-9) {
+      at(
+        "step_misses_max",
+        `A step of ${step} cannot reach the maximum of ${max} from ${min}; the last value it allows is ${min + Math.floor(steps) * step}.`,
+      )
+    }
+  }
+
   // Also a database check constraint; repeated here to give a readable message
   // before the save is attempted rather than after it fails.
   if (!RENDER_OPTIONS[field.type].includes(field.renderAs)) {

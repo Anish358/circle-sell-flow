@@ -69,6 +69,21 @@ describe("validateFieldDefinition", () => {
     )
   })
 
+  it("rejects a step that cannot reach the stated maximum", () => {
+    // 0–100 in threes stops at 99, and the browser's number input then refuses the
+    // maximum the label promises.
+    const issues = validateFieldDefinition(definition({ config: { min: 0, max: 100, step: 3 } }))
+    expect(codesOf(issues)).toContain("step_misses_max")
+
+    expect(
+      codesOf(validateFieldDefinition(definition({ config: { min: 0, max: 100, step: 5 } }))),
+    ).not.toContain("step_misses_max")
+    // Floating-point steps must not be rejected by a naive modulo: 1.5 divides 0–3.
+    expect(
+      codesOf(validateFieldDefinition(definition({ config: { min: 0, max: 3, step: 1.5 } }))),
+    ).not.toContain("step_misses_max")
+  })
+
   it("rejects a presentation the type cannot use", () => {
     const issues = validateFieldDefinition(definition({ type: "date", renderAs: "checkboxes" }))
     expect(codesOf(issues)).toContain("render_as_not_permitted")

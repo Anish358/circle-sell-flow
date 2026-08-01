@@ -18,6 +18,7 @@ import {
   attachField,
   detachField,
   moveAssignment,
+  previewRequired,
   updateAssignment,
 } from "@/lib/admin/actions/assignments"
 import type { FormField } from "@/lib/form-schema/types"
@@ -202,6 +203,44 @@ export function AssignmentList({
 
 const NO_GROUP = "__none__"
 
+/**
+ * Making a field required, with the number an admin actually needs.
+ *
+ * The fear here is reasonable and the answer is reassuring: **existing listings are never
+ * re-validated.** A config change describes what to collect from now on; it does not
+ * reach backwards and invalidate rows that were valid when they were written. Saying that
+ * with the count in front of it turns an unanswerable "are you sure?" into a decision.
+ *
+ * The count is fetched on click rather than rendered with the page: it is one query, only
+ * for the toggle actually being used, and it is right at the moment it is read rather
+ * than as of the last page load.
+ */
+async function confirmRequired(categoryId: number, fieldId: number): Promise<boolean> {
+  const preview = await previewRequired({ categoryId, fieldId })
+  // If the count cannot be read, ask plainly rather than silently proceeding.
+  if (!preview.ok) {
+    return window.confirm("Could not check existing listings. Make this field required anyway?")
+  }
+
+  const { fieldLabel, listingCount, missingCount } = preview.data
+
+  if (missingCount === 0) {
+    return window.confirm(
+      `Make "${fieldLabel}" required?\n\n` +
+        `· All ${listingCount} existing listing${listingCount === 1 ? "" : "s"} here already answer it.\n` +
+        `· New listings will have to answer it before going live.`,
+    )
+  }
+
+  return window.confirm(
+    `Make "${fieldLabel}" required?\n\n` +
+      `· ${missingCount} of ${listingCount} existing listings have no answer for it.\n` +
+      `· Those listings stay live and stay valid. Nothing is re-validated — this rule ` +
+      `applies to what is written from now on.\n` +
+      `· Each of them shows its seller what is now missing, and new listings must answer it.`,
+  )
+}
+
 function OwnRow({
   categoryId,
   row,
@@ -254,12 +293,19 @@ function OwnRow({
       </div>
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
+        {/* The one toggle that states its blast radius before it is applied — see
+            `confirmRequired`. Turning it *off* asks nothing: nothing can break. */}
         <Toggle
           id={`required-${fieldId}`}
           label="Required"
           checked={field.required}
           disabled={pending}
-          onChange={(next) => run(() => updateAssignment({ categoryId, fieldId, required: next }))}
+          onChange={(next) =>
+            run(async () => {
+              if (next && !(await confirmRequired(categoryId, fieldId))) return { ok: true }
+              return updateAssignment({ categoryId, fieldId, required: next })
+            })
+          }
         />
         <Toggle
           id={`prominent-${fieldId}`}

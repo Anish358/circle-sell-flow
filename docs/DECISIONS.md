@@ -1335,3 +1335,105 @@ It is now a row comparison, `(created_at, slug) < (cursor_at::timestamptz, curso
 with the timestamp kept as text end to end. One predicate that matches the
 `(created_at DESC, slug DESC)` ordering, which the planner can drive straight off an
 index, and no lossy parse in the middle.
+
+---
+
+## 18. Phase 8 — the hardening sweep
+
+Forty-one edge cases, swept one by one against the code rather than from memory. The
+checklist lives outside this repo; what follows is the part worth keeping — the five
+things the sweep changed, and why each was a gap rather than a preference.
+
+### Requiring a field, and the number that makes it answerable
+
+The most frightening-looking change an admin can make is the one that changes nothing:
+**requiring a field never invalidates a listing that already exists.** Validation happens
+on write, so those rows stay live and stay valid, and the question is simply asked from
+now on.
+
+Leaving that unsaid was the gap. An admin ticking the box has every reason to believe
+they have just broken four hundred listings, and "are you sure?" is unanswerable without
+the count. The toggle now fetches it on click — "4 of 7 existing listings have no answer;
+those listings stay live and stay valid" — and only then writes.
+
+The other half is the seller's. Completeness is **derived on read, never stored**: a
+stored `is_complete` would be a judgement made against a schema version that has since
+moved, and would need rewriting every time any assignment changed anywhere up the tree —
+the same class of bug as caching a resolved form. It is shown only to the listing's owner,
+because a buyer seeing a listing described as deficient would be reading a claim that is
+not true.
+
+A distinction the screenshots forced: the same list of missing fields means two different
+things. On a **draft** it means unfinished — drafts save incomplete on purpose. On a
+**published** listing it means a question was added afterwards. The sample draft read
+"Model was added after you listed this", which was simply false, and no test would have
+caught it because both branches produce the same list.
+
+### Re-categorising a listing, the one action that removes data
+
+Moving a listing between categories is Circle's own `category-remapping` page, and it is
+the only admin action here that destroys something. The reason is in the schema rather
+than the UI: the attribute trigger revalidates **every** key when `category_id` changes,
+not only the changed ones, so a handset moved into Furniture cannot carry its battery
+health along. That is deliberate — the row would otherwise describe a thing that does not
+exist.
+
+So the choice the checklist offers — keep orphaned values, or drop them with explicit
+confirmation — was already made by the database, and the interface's job is to make it
+visible: every value that will not survive, named with its formatted value, before
+anything is applied. The audit row keeps the previous documents, so the values are
+recoverable by a person even though the move is not undoable by a click.
+
+What survives is the argument for the shared field library, stated by the data rather than
+by a paragraph: Purchase Date sits on both roots, so it crosses a move between them
+untouched — the same mechanism that lets a half-finished draft keep its answers when the
+seller changes category.
+
+### A rate limit that says what it is worth
+
+Creating listings had no limit. It now has a sliding window — ten per minute, keyed on the
+session's seller id, checked before the body is read so a flood costs nothing, returning
+429 with `Retry-After`.
+
+The honest part is the caveat. The state is in memory, so on serverless it is
+per-instance and dies with a cold start: this reliably stops a retry loop or a stuck
+submit button, and it does not stop a determined attacker spreading requests across
+instances. That is the difference between a safety valve and a security control, and the
+useful thing is to say which one it is. The policy is in one module, so swapping the store
+for Redis changes nothing else.
+
+A sliding window rather than a fixed one, because a fixed window lets a client spend a
+full allowance at 11:59:59 and another at 12:00:00 — twice the intended rate at exactly
+the moment a retry storm produces it.
+
+### A step that cannot reach its maximum
+
+Config validation already refused a minimum above a maximum, a default its own field would
+reject, and a required select with no options. It did not refuse `min: 0, max: 100,
+step: 3`, where the browser's number input rejects the maximum the label promises. Now it
+does, comparing rounded steps within a tolerance rather than using a modulo, because
+`0.3 % 0.1` is not zero.
+
+### Sample data as a test surface
+
+The seed went from nine listings to seventeen, chosen so each facet actually partitions
+the set rather than to look busy. Four carry line-art SVGs — drawn, not photographed, since
+there is no upload path and inventing product photography would dress the demo up as
+something it is not — and one carries two, so the gallery's thumbnail row is exercised by
+the sample data instead of being a code path nobody runs.
+
+Enriching it broke nine assertions in the facet integration tests, which is the correct
+outcome for tests that name real rows. Rewriting them was an improvement: the paging test
+now asserts that the two halves of a paged result reassemble into exactly the unpaged one,
+which is a property rather than a count, and the boolean test asserts that selecting both
+sides of a yes/no facet returns the same set as no filter at all.
+
+### Two deferrals, both with the reason stated
+
+**Photo uploads.** The rendering path is complete and now exercised; the upload path —
+object storage, a signed-upload route, MIME sniffing rather than extension trust, HEIC and
+EXIF — is self-contained work, and half of it would be worse than none.
+
+**Old-slug redirects.** Slugs are unique and stable, and there is no listing-edit path at
+all, so no title change can orphan a URL today. The case cannot arise; when editing lands,
+the rule is to keep the slug or 301 the old one.

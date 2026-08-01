@@ -9,6 +9,9 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { getCurrentUser } from "@/lib/auth"
 import { formatPrice } from "@/lib/form-schema/format"
+import { resolveFormSchema } from "@/lib/form-schema/resolve"
+import { allFields, type FormField } from "@/lib/form-schema/types"
+import { missingRequiredFields } from "@/lib/listings/completeness"
 import { resolveListingDisplay, type DisplayAttribute } from "@/lib/listings/display"
 import { CONDITIONS } from "@/lib/listings/input-schema"
 import { getListingBySlug, type ListingDetail } from "@/lib/listings/read"
@@ -67,6 +70,7 @@ export default async function ListingPage(props: { params: Promise<{ slug: strin
     listing.verifiedAttributes,
   )
   const condition = CONDITIONS.find((option) => option.value === listing.condition)
+  const missing = await missingForOwner(listing)
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 sm:py-10">
@@ -106,6 +110,7 @@ export default async function ListingPage(props: { params: Promise<{ slug: strin
             </div>
 
             <VerificationNotice listing={listing} />
+            <CompletenessNotice missing={missing} status={listing.status} />
           </header>
 
           {/* The prominent fields, as configured. What counts as a headline spec is a
@@ -185,6 +190,75 @@ async function isViewable(listing: ListingDetail): Promise<boolean> {
 
   const viewer = await getCurrentUser()
   return viewer?.id === listing.sellerId
+}
+
+/**
+ * Fields this category now requires that the listing does not answer — for its owner only.
+ *
+ * Two deliberate limits. It is computed only when the viewer owns the listing, so a buyer
+ * never pays for a schema resolve on the busiest page after browse, and never sees a
+ * listing described as deficient — it is not. And it is derived on read, so it is always
+ * about the configuration as it stands rather than a stale flag on the row.
+ */
+async function missingForOwner(listing: ListingDetail): Promise<FormField[]> {
+  const viewer = await getCurrentUser()
+  if (viewer?.id !== listing.sellerId) return []
+
+  const schema = await resolveFormSchema(listing.categorySlug)
+  if (!schema) return []
+
+  return missingRequiredFields(allFields(schema), listing.attributes)
+}
+
+/**
+ * What this category asks for that the listing does not answer, said to the one person
+ * who can act on it.
+ *
+ * Two different situations produce the same list and must not be described the same way.
+ * A **draft** is unfinished: nothing changed underneath it, and these are simply the
+ * answers publishing will demand — drafts save incomplete on purpose. A **published**
+ * listing with gaps is the config-lifecycle case: it was complete when written and a
+ * question was added afterwards. Nothing is wrong with it, and telling its seller it is
+ * missing something would be both alarming and false.
+ *
+ * Getting this wrong was caught by looking at the page rather than by a test: the draft
+ * in the sample data read "Model was added after you listed this", which was not true.
+ */
+function CompletenessNotice({
+  missing,
+  status,
+}: {
+  missing: FormField[]
+  status: ListingDetail["status"]
+}) {
+  if (missing.length === 0) return null
+
+  const labels = missing.map((field) => field.label).join(", ")
+  const draft = status === "draft"
+
+  return (
+    <aside className="grid gap-1 rounded-lg border border-dashed px-3 py-2 text-xs">
+      <p className="font-medium">
+        {draft
+          ? `Still needed before publishing: ${missing.length}`
+          : `${missing.length === 1 ? "One question was" : `${missing.length} questions were`} added after you listed this`}
+      </p>
+      <p className="text-muted-foreground leading-relaxed">
+        {draft ? (
+          <>
+            {labels} {missing.length === 1 ? "is" : "are"} required for this category. A draft can
+            be saved without {missing.length === 1 ? "it" : "them"}; going live cannot.
+          </>
+        ) : (
+          <>
+            {labels} {missing.length === 1 ? "is" : "are"} now collected for this category. Your
+            listing stays live and nothing needs doing — existing listings are never re-validated,
+            and the answer is only asked for from here on.
+          </>
+        )}
+      </p>
+    </aside>
+  )
 }
 
 function Gallery({ listing }: { listing: ListingDetail }) {

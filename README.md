@@ -36,7 +36,19 @@ deliberately absent: counting over `jsonb` needs an expression index per key or 
 and a scan looks instant at demo scale while failing at the first real catalogue — the
 scaling path is written out in [docs/DECISIONS.md](docs/DECISIONS.md) §17.
 
-Still to come: photo uploads.
+The awkward half of a runtime-editable schema is what happens to data already written
+against an older version of it, so those cases are handled rather than avoided. Making a
+field required states its blast radius first — and then changes nothing about existing
+listings, because validation happens on write and completeness is **derived on read**,
+shown only to a listing's own seller. Moving a listing between categories names every
+answer that will not survive before it is applied, keeps the ones both categories collect,
+and records the rest in the audit log. Archiving, detaching and re-parenting each say what
+they will affect, in listings, before they do it.
+
+Still to come, deliberately rather than by omission: **photo uploads** (the rendering path
+is complete — ordering, primary image, alt text, a designed placeholder — but object
+storage, a signed-upload route and MIME sniffing are not), and **old-slug redirects**,
+which cannot arise yet because there is no listing-edit path.
 
 ## Running it locally
 
