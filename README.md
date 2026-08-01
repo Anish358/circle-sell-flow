@@ -27,8 +27,16 @@ form — the same `<DynamicForm>`, filtered — and the product page then shows
 _"Battery Health 86% ✓ Verified · seller stated 89%"_. The seller's answers are never
 overwritten, and the database refuses a verified value that cannot name who recorded it.
 
-Still to come: photo uploads, and buyer-side filters (the `filterable` flag is captured but
-no filter UI reads it yet).
+Browse is driven by the same configuration. Tick **Filterable** on an assignment and a
+filter appears on that category's browse page — selects as checkbox groups, numbers and
+dates as ranges, booleans as yes/no — with no code and no deploy. Filters live in the URL,
+so a filtered view is shareable and works with the back button, and equality filters go
+through `attributes @> '{…}'` against the GIN index. Option **counts** ("8 GB (12)") are
+deliberately absent: counting over `jsonb` needs an expression index per key or a scan,
+and a scan looks instant at demo scale while failing at the first real catalogue — the
+scaling path is written out in [docs/DECISIONS.md](docs/DECISIONS.md) §17.
+
+Still to come: photo uploads.
 
 ## Running it locally
 

@@ -1,7 +1,8 @@
-import { and, desc, eq, lt, or, sql, type SQL } from "drizzle-orm"
+import { and, desc, eq, or, sql, type SQL } from "drizzle-orm"
 
 import { db } from "@/db"
 import { categories, listings, users, type ListingCondition, type ListingStatus } from "@/db/schema"
+import type { AttributeFilter } from "./facets"
 
 /**
  * Reading listings — the browse and detail paths.
@@ -42,13 +43,20 @@ export type ListingDetail = ListingCard & {
   images: Array<{ url: string; alt: string | null }>
 }
 
-/** Opaque cursor for keyset pagination. */
+/**
+ * Opaque cursor for keyset pagination.
+ *
+ * `createdAt` is the database's own rendering of the timestamp, not a JavaScript
+ * `Date` turned back into a string — see the tuple comparison below for why the
+ * difference decides whether paging works at all.
+ */
 export type ListingCursor = { createdAt: string; slug: string }
 
 const DEFAULT_PAGE_SIZE = 24
 
 /**
- * A page of live listings, newest first.
+ * A page of live listings, newest first, optionally narrowed to a category and to
+ * attribute filters the buyer chose from that category's facets.
  *
  * Keyset pagination rather than `OFFSET`: on a marketplace new listings arrive
  * constantly, and an offset silently duplicates and skips rows as the set shifts
@@ -60,19 +68,33 @@ export async function getListingPage(
   options: {
     cursor?: ListingCursor
     limit?: number
+    /** Includes everything beneath it, so browsing a tier shows its leaves' listings. */
+    categorySlug?: string
+    /** Already validated against the category's registry — see `./facets`. */
+    filters?: readonly AttributeFilter[]
   } = {},
 ): Promise<{ listings: ListingCard[]; nextCursor: ListingCursor | null }> {
   const limit = Math.min(options.limit ?? DEFAULT_PAGE_SIZE, 60)
 
+  /**
+   * "Strictly after the cursor", as a row comparison.
+   *
+   * Two things this form gets right that the equivalent `a < x OR (a = x AND b < y)`
+   * did not. It matches the `(created_at DESC, slug DESC)` ordering as one predicate,
+   * which the planner can drive straight off an index. And the timestamp stays a
+   * string all the way into SQL: a Postgres `timestamptz` holds microseconds, a
+   * JavaScript `Date` holds milliseconds, so parsing the cursor into a `Date` quietly
+   * truncated it — and a truncated bound is *below* every row it was meant to tie
+   * with, so the second page of any set of listings sharing a timestamp came back
+   * empty. Ties are exactly what a tie-break exists for; seeded and bulk-imported
+   * rows are full of them.
+   */
   const after: SQL | undefined = options.cursor
-    ? or(
-        lt(listings.createdAt, new Date(options.cursor.createdAt)),
-        and(
-          eq(listings.createdAt, new Date(options.cursor.createdAt)),
-          lt(listings.slug, options.cursor.slug),
-        ),
-      )
+    ? sql`(${listings.createdAt}, ${listings.slug}) < (${options.cursor.createdAt}::timestamptz, ${options.cursor.slug})`
     : undefined
+
+  const withinCategory = options.categorySlug ? inCategorySubtree(options.categorySlug) : undefined
+  const matchesFilters = (options.filters ?? []).map(filterCondition)
 
   const rows = await db
     .select({
@@ -83,6 +105,8 @@ export async function getListingPage(
       condition: listings.condition,
       city: listings.city,
       createdAt: listings.createdAt,
+      // The same instant at the database's own precision, for the cursor.
+      cursorAt: sql<string>`${listings.createdAt}::text`,
       categoryName: categories.name,
       categorySlug: categories.slug,
       verifiedAt: listings.verifiedAt,
@@ -92,7 +116,7 @@ export async function getListingPage(
     .from(listings)
     .innerJoin(categories, eq(categories.id, listings.categoryId))
     // Drafts, sold and removed listings stay off the homepage.
-    .where(and(eq(listings.status, "active"), after))
+    .where(and(eq(listings.status, "active"), after, withinCategory, ...matchesFilters))
     .orderBy(desc(listings.createdAt), desc(listings.slug))
     // One extra row is the cheapest way to know whether another page exists.
     .limit(limit + 1)
@@ -102,11 +126,74 @@ export async function getListingPage(
 
   return {
     listings: page.map(toCard),
-    nextCursor:
-      rows.length > limit && last
-        ? { createdAt: last.createdAt.toISOString(), slug: last.slug }
-        : null,
+    nextCursor: rows.length > limit && last ? { createdAt: last.cursorAt, slug: last.slug } : null,
   }
+}
+
+/**
+ * Every category at or beneath the given slug.
+ *
+ * Downward, where the form resolver walks upward — and for the mirror-image reason.
+ * Fields are inherited from ancestors, so a tier's *listings* are held by its
+ * descendants: browsing a middle tier has to reach the leaves or it shows nothing.
+ *
+ * Inactive descendants are included deliberately. Deactivating a category stops new
+ * listings being created in it; it does not retire the ones already sold in good
+ * faith, and having them silently vanish from browse would be a config change
+ * rewriting history.
+ */
+function inCategorySubtree(slug: string): SQL {
+  return sql`${listings.categoryId} IN (
+    WITH RECURSIVE subtree AS (
+      SELECT id FROM categories WHERE slug = ${slug}
+      UNION ALL
+      SELECT c.id FROM categories c JOIN subtree s ON c.parent_id = s.id
+    )
+    SELECT id FROM subtree
+  )`
+}
+
+/**
+ * One attribute filter as a predicate.
+ *
+ * Equality goes through `@>` rather than `->>`, which is the whole reason the GIN
+ * index on `attributes` exists: containment is indexable, and it reaches inside
+ * arrays, so a multi-select's "includes USB-C" is the same operator as a
+ * single-select's "is 8 GB". Several values for one facet are ORed, so each
+ * alternative stays its own indexable containment; separate facets are ANDed by the
+ * caller.
+ */
+function filterCondition(filter: AttributeFilter): SQL | undefined {
+  if (filter.kind === "match") {
+    const alternatives = filter.values.map(
+      (value) => sql`${listings.attributes} @> ${JSON.stringify({ [filter.slug]: value })}::jsonb`,
+    )
+    return alternatives.length === 1 ? alternatives[0] : or(...alternatives)
+  }
+
+  // A range is not containment, so this one cannot use the GIN index — it reads the
+  // key out and compares it, which at demo scale is instant and at real scale is
+  // what an expression index on the hot key is for. The README says so out loud
+  // rather than leaving a reviewer to discover it.
+  const value =
+    filter.type === "number"
+      ? // The CASE is not defensive noise: a cast that meets a non-numeric value
+        // raises, and Postgres does not promise to evaluate a guarding AND first. A
+        // heterogeneous key would otherwise take the whole browse page down with a
+        // 500 instead of quietly not matching.
+        sql`CASE WHEN jsonb_typeof(${listings.attributes} -> ${filter.slug}) = 'number'
+                 THEN (${listings.attributes} ->> ${filter.slug})::numeric END`
+      : // ISO dates sort lexicographically, so text comparison is date comparison —
+        // and the format is enforced on write by both the Zod schema and the trigger.
+        sql`CASE WHEN jsonb_typeof(${listings.attributes} -> ${filter.slug}) = 'string'
+                 THEN ${listings.attributes} ->> ${filter.slug} END`
+
+  const cast = filter.type === "number" ? sql`::numeric` : sql`::text`
+
+  return and(
+    filter.min !== null ? sql`${value} >= ${filter.min}${cast}` : undefined,
+    filter.max !== null ? sql`${value} <= ${filter.max}${cast}` : undefined,
+  )
 }
 
 /**

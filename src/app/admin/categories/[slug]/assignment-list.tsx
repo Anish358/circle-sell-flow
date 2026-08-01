@@ -21,6 +21,7 @@ import {
   updateAssignment,
 } from "@/lib/admin/actions/assignments"
 import type { FormField } from "@/lib/form-schema/types"
+import { isFacetableType } from "@/lib/listings/facets"
 
 /**
  * The assignment screen: which fields this category collects, and on what terms.
@@ -267,11 +268,20 @@ function OwnRow({
           disabled={pending}
           onChange={(next) => run(() => updateAssignment({ categoryId, fieldId, prominent: next }))}
         />
+        {/* Ticking this puts a filter on the category's browse page — the same
+            configuration driving a second surface. Free text is the one type that
+            cannot become one, and saying so here beats an admin hunting for a filter
+            that was never going to appear. */}
         <Toggle
           id={`filterable-${fieldId}`}
           label="Filterable"
           checked={field.filterable}
           disabled={pending}
+          hint={
+            isFacetableType(field.type)
+              ? undefined
+              : "Free-text fields are not faceted — buyers filter by options and ranges, not substrings."
+          }
           onChange={(next) =>
             run(() => updateAssignment({ categoryId, fieldId, filterable: next }))
           }
@@ -359,23 +369,31 @@ function Toggle({
   label,
   checked,
   disabled,
+  hint,
   onChange,
 }: {
   id: string
   label: string
   checked: boolean
   disabled: boolean
+  /** Shown beside the toggle when the flag will not do what its name suggests. */
+  hint?: string
   onChange: (next: boolean) => void
 }) {
   return (
-    <label htmlFor={id} className="flex items-center gap-1.5">
-      <Checkbox
-        id={id}
-        checked={checked}
-        disabled={disabled}
-        onCheckedChange={(next) => onChange(Boolean(next))}
-      />
-      {label}
-    </label>
+    <span className="flex items-center gap-1.5">
+      <label htmlFor={id} className="flex items-center gap-1.5">
+        <Checkbox
+          id={id}
+          checked={checked}
+          disabled={disabled}
+          onCheckedChange={(next) => onChange(Boolean(next))}
+        />
+        {label}
+      </label>
+      {/* Plain text rather than a tooltip: this is the kind of thing an admin needs to
+          see without discovering it. */}
+      {hint ? <span className="text-muted-foreground/80 italic">{hint}</span> : null}
+    </span>
   )
 }

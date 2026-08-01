@@ -1213,8 +1213,125 @@ every state the configuration can reach.
   field they added is costing them listings.
 - **Internationalisation and unit systems.** `unit` is a display string today, not a
   convertible quantity.
-- **Buyer-side facets.** The `filterable` flag is captured on every assignment and
-  carried through the form-schema contract, so the configuration to drive them already
-  exists; what is missing is the filter UI and the counting strategy. See the scaling
-  exit path in §2 — counts over `jsonb` need an expression index per key, which is the
-  first thing that would change.
+- **Facet counts** — "RAM · 8 GB (12)". Deliberately skipped, with the reasoning and
+  the exact scaling path in §17.
+
+---
+
+## 17. Phase 7c — buyer-side facets
+
+The configuration now pays for itself twice. An admin ticks **Filterable** on an
+assignment and a filter appears on browse: same field library, same option lists, same
+slugs, no second definition of what a category collects, no code. A category invented
+after the filter panel was written arrives with working filters, because the panel is
+handed facets built from the resolved schema and knows nothing about what they mean —
+the same argument as the one form renderer, applied to the buyer's side.
+
+### A facet is not a form input
+
+`render_as` answers "how does a seller give this answer" — one of N, as chips or a
+dropdown. A buyer wants the opposite shape: **8 GB _or_ 12 GB**. So presentation does
+not carry over. Every option-bearing field becomes the same checkbox group whatever its
+widget, and a boolean becomes a two-option group rather than a switch, because "either"
+has to be expressible and a switch cannot say it. Numbers and dates become a pair of
+bounds.
+
+Text and textarea get no facet at all. Containment cannot express "contains the word",
+and a substring scan over `jsonb` has no index to help it — that is a search feature
+wearing a facet's clothes, and shipping it as a facet would be the first quietly
+unscalable thing in the app.
+
+### The URL is the state
+
+Nothing in the panel holds a copy of what is selected. Every control reads the query
+string and every change writes a new one, so a filtered view is shareable,
+bookmarkable, survives a reload and moves under the back button — and the server and
+the browser cannot disagree about what is filtered, because there is only one answer
+and it is in the address bar. `useOptimistic` keeps that honest and still instant: a
+tick applies to the displayed query immediately and reconciles when the server render
+lands.
+
+Two consequences worth stating. The chips that remove a filter are plain server-rendered
+links, so undoing a filter costs no JavaScript. And every filter change drops the
+cursor: a keyset cursor points into the previous result set, so carrying it over lands
+the buyer on an empty page immediately after ticking a box.
+
+### The URL is untrusted input — validated against the registry, then dropped
+
+Filters go through the same registry check as a write: a parameter naming a field that
+is not filterable for this category, or an option that no longer exists, never becomes
+a predicate. What differs is the response. A write with an unknown key is a bug and
+earns a 400; a shared link whose option was archived last week is an ordinary fact of a
+mutable registry, and the right answer is to apply the rest of the filter rather than
+show an error page. So writes reject and reads drop, deliberately.
+
+The parameters are namespaced `f.<slug>` and slugs are `^[a-z0-9]+(-[a-z0-9]+)*$`, so
+neither the dot nor the comma separating multiple values can appear inside one, and a
+facet parameter can never collide with `category` or `after`.
+
+### Equality is containment, which is why the index choice mattered
+
+`attributes @> '{"ram":"8gb"}'` rather than `attributes->>'ram' = '8gb'`: containment is
+what the GIN index can answer. Several values within one facet are ORed as separate
+containments so each stays indexable; separate facets are ANDed.
+
+The multi-select case is the one that earns the storage decision. A listing holds
+`{"accessories": ["charger", "cable"]}`, and `@> '{"accessories":["cable"]}'` is true of
+it — containment reaches inside the array. "Includes a charger" needs no different
+operator from "is 8 GB", no unnesting, and no second index.
+
+Ranges are the honest exception: `min`/`max` reads the key out and compares it, which
+the GIN index cannot serve. At this size it is instant; the fix at scale is an
+expression index on the hot key, which is also what gives the planner statistics it
+otherwise does not have inside `jsonb`. The comparison is wrapped in a `CASE` on
+`jsonb_typeof` rather than a guarding `AND`, because Postgres does not promise to
+evaluate the guard first and a cast that meets an unexpected value raises — which would
+take the browse page down with a 500 instead of quietly not matching.
+
+Browsing a tier walks the category tree **downward** — the mirror of the resolver's
+upward walk, and for the same reason. Fields are inherited from ancestors, so a tier's
+listings live in its descendants: "Electronics" reaches the handsets and laptops two
+levels below, or it shows nothing at all. Deactivated descendants stay included:
+deactivating a category stops new listings, it does not retire the ones already sold in
+good faith.
+
+### Counts are deliberately absent
+
+"RAM · 8 GB (12)" is the single most useful thing missing from this panel, and it is
+missing on purpose. Counting per option over `jsonb` means either a scan per facet
+value or an expression index per key. At demo scale a scan is instant, which is exactly
+what makes it the wrong thing to ship: it would look finished and fail at the first
+real catalogue, and nothing in the UI would say so.
+
+The path, in the order it would actually be taken:
+
+1. **Expression indexes on hot keys** — `((attributes->>'ram'))`, one per key that
+   people actually filter by. Carries its own statistics, so it fixes plan quality as
+   well as speed, and makes a `GROUP BY` over one key cheap.
+2. **An EAV projection table maintained by trigger** — `(listing_id, field_slug, value)`,
+   written alongside the `jsonb`. Counts become an ordinary grouped query with real
+   statistics; the registry and the seller flow do not change at all. This is the exit
+   path §2 named, arrived at from the read side rather than the write side.
+3. **An external search index** when facets, free text and relevance have to be one
+   query rather than three.
+
+The interesting thing about that ladder is that none of its rungs touch the
+configuration model. The registry, the resolver, the form and the write path are
+identical in all three worlds — which is the argument that the `jsonb` choice was a
+storage decision and not an architectural one.
+
+### A cursor bug the facet tests found
+
+Testing that a filtered view pages correctly failed on the second page, with a filter
+that plainly matched three rows returning one. The cause was in existing code, not the
+filters: the cursor round-tripped `created_at` through a JavaScript `Date`, which holds
+milliseconds where a Postgres `timestamptz` holds microseconds. The truncated bound
+sorts _below_ every row it was meant to tie with, so the moment several listings shared
+a timestamp — a seed, an import, a busy second — the next page came back empty. Ties are
+precisely what a tie-break exists for, so the bug lived in the one case the code was
+written to handle.
+
+It is now a row comparison, `(created_at, slug) < (cursor_at::timestamptz, cursor_slug)`,
+with the timestamp kept as text end to end. One predicate that matches the
+`(created_at DESC, slug DESC)` ordering, which the planner can drive straight off an
+index, and no lossy parse in the middle.
