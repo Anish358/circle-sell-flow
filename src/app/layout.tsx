@@ -20,7 +20,18 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={cn("font-sans antialiased", geist.variable)}>
-      <body className="bg-background text-foreground flex min-h-dvh flex-col">
+      {/* Browser extensions add their own attributes to `body` before React hydrates —
+          ColorZilla's `cz-shortcut-listen`, password managers, and so on — and React
+          reports the resulting mismatch as a hydration error, which in development is a
+          full-screen overlay on first load. Nothing is wrong, and nothing we ship can
+          stop an extension editing the document.
+
+          This suppresses attribute mismatches on this one element only; it is not
+          inherited, so a genuine mismatch anywhere inside the tree is still reported. */}
+      <body
+        suppressHydrationWarning
+        className="bg-background text-foreground flex min-h-dvh flex-col"
+      >
         <SiteHeader />
         <main className="flex-1">{children}</main>
         <Toaster />

@@ -5,6 +5,7 @@ import { db } from "@/db"
 import { Badge } from "@/components/ui/badge"
 import { CreateFieldForm } from "./create-field-form"
 import { FieldRowActions } from "./field-row-actions"
+import { FieldOptionsEditor, type EditableOption } from "./field-options-editor"
 
 export const metadata: Metadata = { title: "Field library" }
 
@@ -47,6 +48,33 @@ export default async function FieldsPage() {
       FROM fields f
      ORDER BY (f.archived_at IS NOT NULL), f.label
   `)
+
+  // Every option in one query rather than one query per select field, then grouped in
+  // memory. The per-option listing count is what lets archiving state its blast radius,
+  // and how a value is stored depends on the field's type: a single-select writes the
+  // slug as a string, a multi-select writes it into an array.
+  const optionRows = await db.execute<EditableOption & { fieldId: number }>(sql`
+    SELECT o.id,
+           o.field_id                    AS "fieldId",
+           o.value_slug                  AS "valueSlug",
+           o.label,
+           (o.archived_at IS NOT NULL)   AS archived,
+           (SELECT count(*)::int FROM listings l
+             WHERE CASE WHEN f.type = 'multi_select'
+                        THEN l.attributes -> f.slug ? o.value_slug
+                        ELSE l.attributes ->> f.slug = o.value_slug
+                   END)                  AS "listingCount"
+      FROM field_options o
+      JOIN fields f ON f.id = o.field_id
+     ORDER BY (o.archived_at IS NOT NULL), o.sort, o.label
+  `)
+
+  const optionsByField = new Map<number, EditableOption[]>()
+  for (const { fieldId, ...option } of optionRows) {
+    const list = optionsByField.get(fieldId)
+    if (list) list.push(option)
+    else optionsByField.set(fieldId, [option])
+  }
 
   const shared = rows.filter((row) => row.categoryCount > 1).length
 
@@ -98,10 +126,18 @@ export default async function FieldsPage() {
                   : `${row.categoryCount} categor${row.categoryCount === 1 ? "y" : "ies"}`}
                 {" · "}
                 {row.listingCount} listing{row.listingCount === 1 ? "" : "s"} hold a value
-                {row.optionCount > 0
-                  ? ` · ${row.liveOptionCount} of ${row.optionCount} options live`
-                  : ""}
               </p>
+
+              {/* Only select types have options; for everything else the control would be
+                  an empty disclosure. Archived fields are read-only here — restore first,
+                  so there is one place a field comes back rather than two. */}
+              {row.optionCount > 0 && !row.archived ? (
+                <FieldOptionsEditor
+                  fieldId={row.id}
+                  fieldLabel={row.label}
+                  options={optionsByField.get(row.id) ?? []}
+                />
+              ) : null}
             </li>
           ))}
         </ul>

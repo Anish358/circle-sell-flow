@@ -906,6 +906,115 @@ principle — timers in a frozen process — which was visible before shipping i
 stopped it. Local reproduction is what separated "our code is wrong" from "our environment is
 wrong", and it was worth doing before changing anything a second time.
 
+### The resolution: one connection, shared by every request the instance was serving
+
+The failure outlived both corrections above, and by the end it had four reproductions rather
+than one: refresh `/admin/categories` twice, switch accounts in the actor switcher, create a
+category, reorder a category with the arrows. All four behaved identically — a long pause, the
+error boundary, and **the write had succeeded anyway**. Navigate away and back and the new
+category was there, the reorder had happened, the account had switched. "Try again" on the
+error boundary failed every time; "Back to listings" always worked.
+
+**The observation that mattered was available from the first day and went unused for three: the
+actor switcher performs no database write at all.** It sets a cookie and calls
+`revalidatePath`. If the flow with no query fails the same way as the flow with a transaction,
+the mutations are not implicated — the shared path is, and the only shared path is the
+re-render that follows the revalidation.
+
+**The root cause.** `src/db/index.ts` exports a module-scope postgres.js client, and that
+client was configured `max: 1`. Vercel's Fluid Compute runs **several requests concurrently in
+one instance** rather than one request per instance, and every one of them imports that module
+and receives the same client. So concurrent queries — from different requests, and from the
+layout and page of a single re-render, which React renders as siblings — were written onto one
+socket through Supabase's **transaction-mode** pooler, which expects one query at a time per
+client connection because that is how it decides which server connection a statement belongs
+to. postgres.js has no query timeout, so when that socket stopped making progress, every later
+query on the instance queued behind it indefinitely, and the instance stayed warm and kept
+accepting requests. A poisoned instance: which is exactly why retrying failed while navigating
+worked, since the retry returned to the same instance and the navigation could land on another.
+
+None of it can reproduce locally. There is no pooler, and there is one request at a time.
+
+**How it was finally found, which is the part worth keeping.** For three days the investigation
+read Supabase's Postgres logs and inferred the application's behaviour from them. The failing
+layer was the application, and its own function logs stated the cause outright in three fields:
+
+- three admin requests with `durationMs` of exactly `20000` — the `maxDuration` kill — and **no
+  corresponding Postgres error of any kind**, proving their queries never reached the database
+  and were sitting in a client-side queue;
+- `concurrency: 2` and `concurrency: 3` on precisely those requests;
+- two of them sharing one `instanceId`.
+
+Read the logs of the layer that is failing before inferring from the logs of the layer it talks
+to. Everything above this paragraph is what inference cost.
+
+**What it was not**, each disproved rather than argued away:
+
+- _Not pooler exhaustion._ `pg_stat_activity` showed eight backends on an idle database, all of
+  them Supabase's own — none belonging to the application. The theory that drove two earlier
+  fixes was never true.
+- _Not starved free-tier compute._ `EXPLAIN (ANALYZE, BUFFERS)` on the statement that had been
+  cancelled after two minutes: **0.123 ms**, six shared buffer hits. No amount of CPU contention
+  turns that into a timeout.
+- _Not the SQL._ Same measurement.
+
+**One genuinely separate fault surfaced on the way, and it was real.** The Postgres log recorded
+`process … still waiting for AccessExclusiveLock on relation 17631` — and `17631::regclass`
+resolved to `users`, `17676` to `audit_log`. `TRUNCATE` takes an `AccessExclusiveLock`, and the
+seed truncates `users`: a seed run against a database that was serving traffic. Postgres's lock
+queue is FIFO, so while that `TRUNCATE` waited for one reader to finish, **every later reader
+queued behind it**, including trivial ones. A script whose job is loading sample data took the
+site down.
+
+What turned that blip into a four-minute outage was an inversion nobody had looked at:
+
+| Who gives up           | After |
+| ---------------------- | ----- |
+| Vercel (`maxDuration`) | 20 s  |
+| `statement_timeout`    | 120 s |
+| `lock_timeout`         | never |
+
+Read in that order it is self-sustaining. A blocked query waits indefinitely for its lock;
+Vercel kills the function at 20 s; the database, which has no idea anyone left, goes on
+executing the abandoned statement — still holding its locks — for another hundred seconds. Those
+orphans are what the next exclusive request waits on, which parks the next wave of readers.
+**The database must give up before the client abandons it**, and it was doing the opposite.
+
+**And one self-inflicted outage worth recording**, because the lesson is not about databases.
+A deploy failed while prerendering `/admin/audit` — the one page that reads the database and
+uses no request-time API of its own, so the build rendered it to discover whether it was static,
+that render queried Postgres, and a slow database failed the **build**. Vercel binds environment
+variables to a deployment at build time, so the failed deploy left the _previous_ deployment
+live, still holding the _previous_ database password after a rotation. Every page then hit the
+error boundary. A build must never depend on the database being reachable, let alone fast.
+
+**The five changes, each defensible independently of the diagnosis:**
+
+1. **`max: 10`** (from 1). Sized for the runtime's concurrency model — several requests per
+   instance, each render querying in parallel — rather than for one request. The original
+   reasoning was slot scarcity, and the arithmetic does not hold: what is scarce is Supavisor's
+   pool of _server_ connections, which it manages itself and which are occupied only while a
+   statement executes. Client connections into Supavisor are cheap; multiplexing them is the
+   entire reason it exists.
+2. **`0007_connection_timeouts.sql`** — `lock_timeout=3s` < `statement_timeout=10s` <
+   `maxDuration=20s`. Set on the role rather than the database, so Supabase's own backups and
+   maintenance keep their own patience, and via `current_user` because the role is `postgres` on
+   Supabase and `circle` in the local container.
+3. **`dynamic = "force-dynamic"` on the admin layout.** Verified by building with the database
+   pointed at a dead port: the build now passes, so no database can fail a deploy again.
+4. **`prefetch={false}`** on the site header and the admin nav. Both header links appear on every
+   page and both are database-backed renders, so every visit anywhere speculatively ran several
+   of the heaviest renders in the app for a navigation that usually never happened.
+5. **`SET LOCAL lock_timeout = '3s'` before the seed's `TRUNCATE`**, so a seed fails fast instead
+   of parking a live site. The operational rule it encodes: never run the truncating seed against
+   a database that is serving traffic.
+
+Generalising, since three of the four faults in this section share a shape: **a fact that is true
+locally and false in deployment will not be found by reasoning, only by measuring the deployed
+system.** One request per instance, no pooler between the client and Postgres, a database on the
+same machine — every one of those is a local truth that the deployment quietly does not share,
+and each produced a bug that was invisible in development and obvious in the logs.
+
 ---
 
 ---
