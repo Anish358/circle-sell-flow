@@ -48,6 +48,14 @@ export async function SiteHeader() {
               any page speculatively runs two of the app's heaviest renders, each as its own
               serverless function holding its own connection, for a navigation that usually
               never happens. One deliberate click can afford to wait for one render. */}
+          {/* Offered to administrators too, not only sellers. An admin can list an item —
+              nothing in the API stops them — so an admin can have listings to look at, and
+              hiding the link would have the nav assert a rule the code does not enforce. */}
+          {user ? (
+            <ButtonLink variant="ghost" size="sm" href="/my-listings" prefetch={false}>
+              My listings
+            </ButtonLink>
+          ) : null}
           {admin ? (
             <ButtonLink variant="ghost" size="sm" href="/admin" prefetch={false}>
               Admin

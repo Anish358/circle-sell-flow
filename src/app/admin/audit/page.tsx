@@ -1,7 +1,11 @@
 import type { Metadata } from "next"
 
-import { getActivityLog } from "@/lib/admin/audit"
+import { Pager } from "@/components/pager"
+import { SearchBox } from "@/components/search-box"
+import { countActivityLog, getActivityLog } from "@/lib/admin/audit"
 import type { ActivityItem } from "@/lib/admin/activity"
+import { PAGE_PARAM, pageHref, readPage } from "@/lib/pagination"
+import { searchTerms } from "@/lib/search"
 import { cn } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Activity" }
@@ -20,8 +24,22 @@ export const metadata: Metadata = { title: "Activity" }
  * and every bit of that translation happens in `activity.ts`, so this file only lays
  * out sentences. The machine action is still there, on hover, for whoever is debugging.
  */
-export default async function AuditPage() {
-  const items = await getActivityLog(150)
+/** Ten to a page, as everywhere else in the console. */
+const PAGE_SIZE = 10
+
+export default async function AuditPage(props: {
+  searchParams: Promise<{ q?: string; page?: string }>
+}) {
+  const { q, page: rawPage } = await props.searchParams
+  const terms = searchTerms(q)
+
+  const total = await countActivityLog(terms)
+  const page = readPage(rawPage, PAGE_SIZE, total)
+  const items = await getActivityLog({ terms, limit: PAGE_SIZE, offset: page.offset })
+
+  const query = new URLSearchParams()
+  if (q) query.set("q", q)
+  if (page.number > 1) query.set(PAGE_PARAM, String(page.number))
 
   return (
     <div className="grid gap-4">
@@ -29,10 +47,19 @@ export default async function AuditPage() {
         <h1 className="text-lg font-semibold tracking-tight">Activity</h1>
       </header>
 
+      <SearchBox
+        query={query.toString()}
+        label="Search activity by name, person or kind of change"
+        placeholder="Search activity…"
+        resetParams={[PAGE_PARAM]}
+        className="max-w-md"
+      />
+
       {items.length === 0 ? (
         <p className="text-muted-foreground rounded-lg border border-dashed px-4 py-10 text-center text-sm">
-          Nothing recorded yet. Changes made through this console appear here; the sample data was
-          loaded by a script, which is why it is absent.
+          {terms.length > 0
+            ? `No change matches “${q}”. Searching looks at the names involved and who made the change.`
+            : "Nothing recorded yet. Changes made through this console appear here; the sample data was loaded by a script, which is why it is absent."}
         </p>
       ) : (
         <ul className="grid gap-1">
@@ -77,6 +104,12 @@ export default async function AuditPage() {
           ))}
         </ul>
       )}
+
+      <Pager
+        previousHref={page.hasPrevious ? pageHref(query.toString(), page.number - 1) : null}
+        nextHref={page.hasNext ? pageHref(query.toString(), page.number + 1) : null}
+        summary={`${page.from}–${page.to} of ${page.totalItems} change${page.totalItems === 1 ? "" : "s"}`}
+      />
     </div>
   )
 }

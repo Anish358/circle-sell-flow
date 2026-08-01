@@ -3,6 +3,7 @@ import { desc, eq, inArray, or, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { auditLog, categories, fieldGroups, fields, listings, users } from "@/db/schema"
 import type { NewAuditLogEntry } from "@/db/schema"
+import { matchesAllTerms } from "@/lib/search"
 import { collectReferences, describeAudit, type ActivityItem, type ActivityNames } from "./activity"
 
 /**
@@ -87,12 +88,47 @@ export type AuditEntry = {
  * at the time. For a rename the entry itself carries both, so the one case where the
  * distinction matters reads correctly anyway.
  */
-export async function getActivityLog(limit = 100): Promise<ActivityItem[]> {
-  const entries = await getAuditLog(limit)
+export async function getActivityLog(
+  options: { terms?: readonly string[]; limit?: number; offset?: number } = {},
+): Promise<ActivityItem[]> {
+  const entries = await getAuditLog(options)
   if (entries.length === 0) return []
 
   const names = await resolveNames(collectReferences(entries))
   return entries.map((entry) => describeAudit(entry, names))
+}
+
+/**
+ * Searching a log whose readable form does not exist until it is rendered.
+ *
+ * The sentences an admin reads are generated at display time, so there is no column
+ * holding "New category Washing Machine" to match against. What the row does hold is the
+ * before/after documents, and the name is in there — `{"name": "Washing Machine"}` — so
+ * the search runs over those documents as text, plus the actor and the entity type.
+ *
+ * That is a substring scan over jsonb with no index, and it is the right trade here and
+ * only here: the log is small, it is an internal page, and the alternative is either
+ * denormalising the sentence into a column that would then have to be regenerated
+ * whenever the wording changed, or a search that cannot find a category by name.
+ */
+export async function countActivityLog(terms: readonly string[] = []): Promise<number> {
+  const [counted] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(auditLog)
+    .leftJoin(users, eq(users.id, auditLog.actorId))
+    .where(activitySearch(terms))
+
+  return counted?.total ?? 0
+}
+
+function activitySearch(terms: readonly string[]) {
+  return matchesAllTerms(terms, [
+    sql`${auditLog.action}`,
+    sql`${auditLog.entityType}`,
+    sql`coalesce(${users.name}, '')`,
+    sql`coalesce(${auditLog.before}::text, '')`,
+    sql`coalesce(${auditLog.after}::text, '')`,
+  ])
 }
 
 async function resolveNames(refs: ReturnType<typeof collectReferences>): Promise<ActivityNames> {
@@ -142,7 +178,13 @@ async function resolveNames(refs: ReturnType<typeof collectReferences>): Promise
   }
 }
 
-export async function getAuditLog(limit = 100): Promise<AuditEntry[]> {
+export async function getAuditLog(
+  options: { terms?: readonly string[]; limit?: number; offset?: number } = {},
+): Promise<AuditEntry[]> {
+  // The query builder rather than raw SQL, for one specific reason: it maps column types
+  // on the way out, so `at` arrives as a `Date`. A hand-written `db.execute` returns
+  // whatever the driver produced — a string, here — and the page then renders a timestamp
+  // by calling a method a string does not have.
   return (
     db
       .select({
@@ -158,7 +200,11 @@ export async function getAuditLog(limit = 100): Promise<AuditEntry[]> {
       .from(auditLog)
       // A left join, because the seed and any future migration write entries with no actor.
       .leftJoin(users, eq(users.id, auditLog.actorId))
+      .where(activitySearch(options.terms ?? []))
+      // The id breaks ties, because several entries can share a timestamp to the microsecond
+      // when one action writes more than one row.
       .orderBy(desc(auditLog.at), desc(auditLog.id))
-      .limit(limit)
+      .limit(options.limit ?? 100)
+      .offset(options.offset ?? 0)
   )
 }

@@ -372,3 +372,77 @@ export function decodeCursor(raw: string | undefined): ListingCursor | undefined
     return undefined
   }
 }
+
+/**
+ * A seller's own listings — every one of them, whatever its state.
+ *
+ * The one read in the app that deliberately ignores `status`. Browse shows what is for
+ * sale; this shows what you have, which includes the draft you abandoned on Tuesday and
+ * the item you sold last month. Hiding either would make the page unable to answer the
+ * question it exists for.
+ *
+ * `sellerId` comes from the session at the call site and is never a parameter of the URL.
+ * That is the whole security property here: there is no way to ask this for somebody
+ * else's listings, because there is nowhere to say whose.
+ */
+export type SellerListing = {
+  slug: string
+  title: string
+  pricePaise: number
+  currency: string
+  status: ListingStatus
+  categoryName: string
+  city: string
+  createdAt: Date
+  verifiedAt: Date | null
+  attributeCount: number
+}
+
+export async function getSellerListings(options: {
+  sellerId: string
+  searchTerms?: readonly string[]
+  limit: number
+  offset: number
+}): Promise<SellerListing[]> {
+  const rows = await db.execute<SellerListing>(sql`
+    SELECT l.slug,
+           l.title,
+           l.price_paise                                               AS "pricePaise",
+           l.currency,
+           l.status,
+           l.city,
+           l.created_at                                                AS "createdAt",
+           l.verified_at                                               AS "verifiedAt",
+           c.name                                                      AS "categoryName",
+           (SELECT count(*)::int FROM jsonb_object_keys(l.attributes))  AS "attributeCount"
+      FROM listings l
+      JOIN categories c ON c.id = l.category_id
+     WHERE l.seller_id = ${options.sellerId}
+       AND ${sellerSearch(options.searchTerms ?? [])}
+     -- Drafts first: they are the only rows on this page that are waiting on the person
+     -- reading it. Everything else is history, newest first.
+     ORDER BY (l.status <> 'draft'), l.created_at DESC, l.slug DESC
+     LIMIT ${options.limit} OFFSET ${options.offset}
+  `)
+
+  return [...rows]
+}
+
+export async function countSellerListings(
+  sellerId: string,
+  terms: readonly string[] = [],
+): Promise<number> {
+  const [counted] = await db.execute<{ total: number }>(sql`
+    SELECT count(*)::int AS total
+      FROM listings l
+      JOIN categories c ON c.id = l.category_id
+     WHERE l.seller_id = ${sellerId} AND ${sellerSearch(terms)}
+  `)
+
+  return counted?.total ?? 0
+}
+
+/** One predicate for both, so the count and the page can never disagree. */
+function sellerSearch(terms: readonly string[]) {
+  return matchesAllTerms(terms, [sql`l.title`, sql`c.name`, sql`l.city`]) ?? sql`true`
+}

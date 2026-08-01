@@ -34,11 +34,6 @@ export function FormPreview({ schema }: { schema: FormSchema }) {
         </button>
       </div>
 
-      <p className="text-muted-foreground text-xs leading-relaxed">
-        The real form, not a mock-up — same component, same contract. Answer a conditional question
-        to watch the fields it controls appear.
-      </p>
-
       <div className="rounded-xl border p-4">
         {schema.groups.length === 0 ? (
           <p className="text-muted-foreground py-8 text-center text-sm">

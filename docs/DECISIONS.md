@@ -1582,3 +1582,52 @@ was correct a second ago. Page one drops the parameter entirely, so there is one
 page rather than two. A new search resets to the first page, since page 3 of the previous
 results is not a page of these. And every control is a plain link: paging costs no
 JavaScript, survives being shared, and is crawlable.
+
+---
+
+## 22. "My listings", and searching a log that has no text
+
+**A seller needs a page browse cannot be.** Browse answers "what can I buy", which by
+definition excludes drafts, sold items and anything withdrawn. A seller's question is
+"what have I got", which is exactly those. The gap mattered most for drafts: a draft is
+visible to nobody but its owner, so before this page the only route back to one was a URL
+you were shown once and might have closed.
+
+Two decisions inside it. **Whose listings comes from the session, never the URL** — there
+is no `?seller=` to tamper with, because the question "whose?" is not one the client gets
+to answer, and this is the one read in the app that deliberately returns rows the public
+pages hide. A database test asserts the two seeded sellers' pages are disjoint and that
+searching one account cannot surface the other's rows; that is a security property, not a
+feature detail. And **drafts sort first**, because they are the only rows on the page
+waiting on the person reading it — everything else is history.
+
+The link is offered to administrators too, not only to sellers. An admin can list an item
+— nothing in the API stops them — so an admin can have listings to look at, and hiding
+the link would have the nav assert a rule the code does not enforce. That is the same
+reasoning that already keeps "Sell an item" visible to admins.
+
+**Searching the activity log needed a different answer from every other search.** The
+sentences an admin reads there do not exist until they are rendered — they are generated
+from an action key and two documents — so there is no column holding "New category
+Washing Machine" to match against. What the row does hold is the documents, and the name
+is inside them, so the search runs over `before::text` and `after::text` alongside the
+actor and the entity type. That is a substring scan over jsonb with no index, and it is
+the right trade here and nowhere else: the log is small, the page is internal, and the
+alternatives are either denormalising the sentence into a column that would need
+regenerating whenever the wording changed, or a search that cannot find a category by
+name.
+
+**A bug worth recording**, because the tests could not have caught it. Adding search
+meant rewriting the log query, and it was written as raw SQL — which returns `at` as a
+string where the query builder returns a `Date`. Nothing about the describer changed, so
+every unit test still passed, and the page crashed on `at.toISOString()`. The fix was to
+go back to the query builder, whose column mapping is the point of using it; the lesson
+is that the shape of a row comes out of the driver, and only a real driver can be asked
+about that. There is now a database test that renders-in-effect by asserting the type.
+
+**And a subtler one the same change would have introduced.** The verification queue's
+"10 waiting · 6 checked" was derived from the fetched rows, which was correct only while
+every row was fetched. The moment a page holds ten of sixteen, that line silently becomes
+"waiting on this page" — a different and much less useful fact, stated in exactly the
+same words. The counts are now aggregates over everything the filter matches, computed in
+SQL beside the page rather than from it.

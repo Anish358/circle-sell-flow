@@ -33,9 +33,6 @@ export function ActorSwitcher({
 
   return (
     <div className="flex items-center gap-2 text-xs">
-      <label htmlFor="acting-as" className="text-muted-foreground whitespace-nowrap">
-        Acting as <span className="opacity-60">(demo)</span>
-      </label>
       <Select
         value={currentEmail}
         onValueChange={(email) => startTransition(() => actAs(String(email)))}
