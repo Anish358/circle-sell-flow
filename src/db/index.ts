@@ -7,48 +7,53 @@ import * as schema from "./schema"
 /**
  * The database client.
  *
- * A serverless instance is **frozen** after it responds, not torn down, and its open
- * connection keeps occupying a slot in Supabase's pooler. Enough frozen instances and every
- * slot belongs to something asleep; new requests then wait for a slot that never frees.
+ * This module is **shared by every request the instance is serving at once**, which is the
+ * fact the first version of it got wrong.
  *
- * The important limitation to be honest about: `idle_timeout` and `max_lifetime` are
- * client-side timers, and **timers do not run in a frozen instance**. They reclaim a
- * connection on an instance that is still awake, which helps, but they cannot reclaim one
- * from an instance that is asleep. There is no client-side setting that can — reclaiming
- * those is the pooler's job.
+ * Vercel's Fluid Compute runs several requests concurrently in one instance rather than one
+ * request per instance — the function logs record `concurrency: 3` on the requests that
+ * failed. Every one of those requests imports this module and gets the same client. So the
+ * pool here is not sized for one render; it is sized for every render the instance happens
+ * to be doing simultaneously, times the queries each of those renders runs in parallel.
  *
- * So the durable defences are elsewhere, and they are what actually matter:
+ * Sized at 1, as it originally was, the consequences compound:
  *
- *   - **create fewer instances.** The prefetch fix (`loading.tsx` on every dynamic route)
- *     removed roughly a dozen page renders per homepage visit, which was the thing
- *     manufacturing instances faster than the pooler could recycle them.
- *   - **never wait forever.** `connect_timeout` plus a `maxDuration` on each route means a
- *     request that cannot get a connection fails in seconds with a visible error, instead
- *     of occupying a function slot for five minutes and taking the next request down too.
+ *   - **Queries queue instead of running.** postgres.js writes them onto the one socket
+ *     ahead of any reply — and a transaction-mode pooler wants a single query at a time per
+ *     client connection, because that is how it decides which server connection a statement
+ *     belongs to.
+ *   - **A stall is total, and it is sticky.** postgres.js has no query timeout, so once that
+ *     socket stops making progress every later query on the instance waits forever, and the
+ *     instance stays warm and keeps accepting requests. That is a poisoned instance: it
+ *     explains why "Try again" failed repeatedly while "Back to listings" worked — the retry
+ *     landed on the same instance, the navigation landed on a different one.
+ *   - **It is invisible from the database side.** Those requests died at Vercel's 20-second
+ *     limit having logged no Postgres error at all, because their queries were still sitting
+ *     in a client-side queue. Which is exactly why the database's own logs, read alone, kept
+ *     pointing at the wrong thing.
+ *
+ * None of it reproduces locally: no pooler, and one request at a time.
+ *
+ * The remaining defences, which matter once queueing is no longer the bottleneck:
+ * `connect_timeout` here, `maxDuration` on each route, and — since 0007 — a server-side
+ * `statement_timeout` below both, so a query that does reach Postgres and misbehave is
+ * cancelled by the database before anything else gives up on it.
  */
 function createClient() {
   return postgres(env.DATABASE_URL, {
-    // Enough connections to serve one render without pipelining.
+    // Enough connections that concurrent queries never queue behind each other.
     //
-    // This was 1, on the reasoning that a serverless invocation handles a single request
-    // so anything more just consumes pooler slots. The first half is true; the conclusion
-    // was wrong, for two reasons.
+    // Budget it from the observed worst case rather than a guess: three requests on one
+    // instance, each re-rendering a tree whose layout and page query in parallel. Ten
+    // leaves headroom over that and is also postgres.js's own default.
     //
-    // A single request is not a single query. A revalidation re-renders the whole tree,
-    // and React renders siblings concurrently — the layout resolving the current user and
-    // the page loading its own data are in flight at the same time. With `max: 1` they
-    // cannot each have a connection, so postgres.js pipelines them: several queries
-    // written onto one socket before any reply is read. A transaction-mode pooler expects
-    // one query at a time per client connection, because that is how it decides which
-    // server connection a statement belongs to. This is the one situation the app gets
-    // into that never occurs locally, where there is no pooler — and it is precisely the
-    // situation that fails.
-    //
-    // And the slot arithmetic doesn't hold either. What is scarce is Supavisor's pool of
-    // *server* connections, which it manages itself; client connections into Supavisor
-    // are cheap and are exactly what it exists to multiplex. Three costs us almost
-    // nothing and lets a concurrent render be concurrent.
-    max: 3,
+    // The original `max: 1` was reasoned from slot scarcity, and the arithmetic doesn't
+    // hold: what is scarce is Supavisor's pool of *server* connections, which it manages
+    // itself and which are only occupied while a statement is actually executing. Client
+    // connections into Supavisor are cheap — multiplexing them is the entire reason it
+    // exists. Ten idle client connections cost approximately nothing; one shared busy
+    // connection cost an outage.
+    max: 10,
 
     // Fail fast and visibly rather than hanging until the platform's timeout.
     connect_timeout: 10,
