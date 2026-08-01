@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { getCategoryTree, type CategoryNode } from "@/lib/categories"
 import { CreateCategoryForm } from "./create-category-form"
 import { CategoryRowActions } from "./category-row-actions"
+import { MoveCategoryDialog } from "./move-category-dialog"
 
 export const metadata: Metadata = { title: "Categories" }
 
@@ -19,6 +20,12 @@ export const metadata: Metadata = { title: "Categories" }
 export default async function CategoriesPage() {
   const tree = await getCategoryTree({ includeInactive: true })
   const flat = flatten(tree)
+
+  // Derived from the tree already in hand rather than a query per row: a move dialog
+  // must never offer a category's own descendant as its parent, since that detaches
+  // both from the tree entirely. The server rejects it too — this just means the
+  // ordinary path never has to.
+  const relations = indexTree(tree)
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_20rem] lg:items-start lg:gap-10">
@@ -67,6 +74,13 @@ export default async function CategoriesPage() {
                   v{node.configVersion}
                 </span>
 
+                <MoveCategoryDialog
+                  id={node.id}
+                  name={node.name}
+                  currentParentId={relations.get(node.id)?.parentId ?? null}
+                  candidates={candidatesFor(node.id, flat, relations)}
+                />
+
                 <CategoryRowActions
                   id={node.id}
                   name={node.name}
@@ -103,4 +117,41 @@ function flatten(
   depth = 0,
 ): Array<{ node: CategoryNode; depth: number }> {
   return nodes.flatMap((node) => [{ node, depth }, ...flatten(node.children, depth + 1)])
+}
+
+type Relation = { parentId: number | null; descendants: Set<number> }
+
+/** Each category's parent and the full set beneath it, in one walk. */
+function indexTree(
+  nodes: readonly CategoryNode[],
+  parentId: number | null = null,
+  into = new Map<number, Relation>(),
+): Map<number, Relation> {
+  for (const node of nodes) {
+    // Children first, so their own descendant sets are ready to fold in.
+    indexTree(node.children, node.id, into)
+
+    const descendants = new Set<number>()
+    for (const child of node.children) {
+      descendants.add(child.id)
+      for (const id of into.get(child.id)?.descendants ?? []) descendants.add(id)
+    }
+
+    into.set(node.id, { parentId, descendants })
+  }
+
+  return into
+}
+
+/** Everywhere this category could legally go: anywhere but itself or its own subtree. */
+function candidatesFor(
+  id: number,
+  flat: Array<{ node: CategoryNode; depth: number }>,
+  relations: Map<number, Relation>,
+): Array<{ id: number; label: string }> {
+  const forbidden = relations.get(id)?.descendants ?? new Set<number>()
+
+  return flat
+    .filter(({ node }) => node.id !== id && !forbidden.has(node.id))
+    .map(({ node, depth }) => ({ id: node.id, label: `${"— ".repeat(depth)}${node.name}` }))
 }

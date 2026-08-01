@@ -753,6 +753,40 @@ It rejected an `e.g. Tablet` placeholder in the category-creation form. Reworded
 exempted — the guard has now caught its own author twice, which is roughly the point of
 having it.
 
+### Re-parenting previews the swap, rather than confirming it
+
+Moving a category is the most consequential single edit in the console and the only one
+whose effect is invisible from the thing being edited. The category's own assignments do
+not change at all; its entire _inherited_ set is replaced. A category can gain or lose
+most of the questions a seller meets, and nothing on the row being dragged says so.
+
+An "are you sure?" here is a question nobody can answer, so the dialog answers it first:
+pick a destination and it computes the two resolved field sets and shows the difference —
+what the category starts collecting, what it stops collecting, and how many live listings
+hold a value for a departing field.
+
+Three decisions inside that:
+
+- **The preview is read-only and runs on every change of the destination**, not on submit.
+  `getReparentImpact` derives the prospective set from hypothetical ancestry rather than
+  writing and rolling back the way the assignment actions have to. That is what lets an
+  admin try a move, see it is worse than they thought, and pick something else. A warning
+  that appears only at submit arrives after the decision is made.
+- **Descendants are never offered.** `reparentCategory` walks the tree and rejects a cycle
+  server-side — it must, since a check constraint can only catch a category being its own
+  parent, not a longer loop. But the dropdown is built from the tree already on the page
+  with the subtree excluded, so the ordinary path never reaches that error. Guard in the
+  action, absence in the UI.
+- **"Stops collecting" says what does _not_ happen.** Nothing is deleted; listings keep
+  every value they hold and the product page moves them under "Additional details". The
+  wording has to carry that, because "stops collecting 5 fields" alone reads as data loss
+  and would make an admin refuse a safe move.
+
+The arithmetic is pinned by integration tests rather than by the dialog: equivalent
+parents report no change, a deeper move reports only gains, a move to the top level
+reports the losses and the affected-listing count, a listing holding five departing fields
+is counted once, and the category's own assignments never appear as lost.
+
 ---
 
 ## 13. Performance — the function was on the wrong continent

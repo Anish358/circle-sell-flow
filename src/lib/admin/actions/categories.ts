@@ -7,6 +7,7 @@ import { z } from "zod"
 import { db } from "@/db"
 import { categories } from "@/db/schema"
 import { requireAdmin } from "@/lib/auth"
+import { getReparentImpact, type ReparentImpact } from "@/lib/admin/blast-radius"
 import { recordAudit } from "@/lib/admin/audit"
 import { slugify } from "@/lib/slug"
 import { type ActionResult, failure, success, withAdmin } from "./result"
@@ -231,6 +232,28 @@ export async function moveCategory(input: {
 
     revalidateAdmin()
     return success(null)
+  })
+}
+
+/**
+ * What a proposed move would change, before it is made.
+ *
+ * Re-parenting is the one edit whose consequences are invisible from the thing being
+ * edited: the category's own assignments do not change at all, and yet the form sellers
+ * meet can gain or lose half its questions, because the entire inherited set is swapped.
+ * An "are you sure?" without this is a question nobody can answer.
+ *
+ * Read-only, so it can run on every change of the parent dropdown rather than only on
+ * submit. That matters — the point is to let an admin explore a move and change their
+ * mind, not to warn them after they have committed to one.
+ */
+export async function previewReparent(input: {
+  id: number
+  parentId: number | null
+}): Promise<ActionResult<ReparentImpact>> {
+  return withAdmin(async () => {
+    if (input.parentId === input.id) return failure("A category cannot be its own parent.")
+    return success(await getReparentImpact(input.id, input.parentId))
   })
 }
 
