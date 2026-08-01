@@ -1548,3 +1548,37 @@ answer is a `pg_trgm` GIN index for substring matching or a `tsvector` column fo
 matching, and every caller passes columns and terms and would not change. Searching
 inside `attributes` is deliberately absent for the same reason facet counts are: it is
 the external-index problem, not a missing `WHERE` clause.
+
+---
+
+## 21. Two paginations, because there are two read patterns
+
+Browse and the two admin tables page differently, and the difference is the point rather
+than an inconsistency.
+
+**Browse pages by keyset cursor**, twelve to a page, with Previous and Next. It cannot
+offer page numbers, and that is the trade being made: a cursor knows its neighbours, not
+its position. What it buys is that a listing posted while someone reads page one is never
+duplicated onto page two, which `OFFSET` cannot promise on a feed that is constantly
+being added to. Reading backwards is the mirror of reading forwards — the comparison is
+inverted, the order is inverted, and the rows are reversed in memory before rendering —
+so Previous is a real page rather than browser history. A database test walks the whole
+set forwards and asserts it reassembles into exactly the unpaged result, with no
+duplicates.
+
+**The admin tables page by `OFFSET`**, ten to a page, with a total. They take the
+opposite trade for the opposite reason: their content changes rarely, an operator wants
+to know there are 23 fields, and a row appearing twice across two pages of an internal
+table is a cosmetic nuisance rather than a correctness problem. The total is a separate
+count query rather than something returned alongside the page, because the total is what
+decides how many pages exist — a page number cannot be clamped to a range nobody has
+measured.
+
+Both share the same small rules, which is where the bugs would otherwise be. A page
+number from a URL is untrusted, so `?page=abc`, `?page=-1` and `?page=99` all resolve to
+a page that exists rather than to a negative `OFFSET` or a dead end — clamped, not 404,
+because deleting the last row of page 3 should show page 2 rather than break a link that
+was correct a second ago. Page one drops the parameter entirely, so there is one URL per
+page rather than two. A new search resets to the first page, since page 3 of the previous
+results is not a page of these. And every control is a plain link: paging costs no
+JavaScript, survives being shared, and is crawlable.

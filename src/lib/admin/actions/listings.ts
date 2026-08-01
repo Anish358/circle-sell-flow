@@ -132,6 +132,7 @@ export async function listAdminListings(
    * they go looking: what it is called, who is selling it, and what it is filed under.
    */
   terms: readonly string[] = [],
+  window: { limit: number; offset: number } = { limit: 100, offset: 0 },
 ): Promise<AdminListingRow[]> {
   // Everything exported from a `"use server"` module is a callable endpoint, reads
   // included — so this checks the role itself rather than relying on the page that
@@ -150,11 +151,37 @@ export async function listAdminListings(
       FROM listings l
       JOIN categories c ON c.id = l.category_id
       JOIN users u ON u.id = l.seller_id
-     WHERE l.status <> 'removed'
-       AND ${matchesAllTerms(terms, [sql`l.title`, sql`u.name`, sql`c.name`]) ?? sql`true`}
+     WHERE l.status <> 'removed' AND ${matchesTerms(terms)}
      ORDER BY l.created_at DESC, l.slug DESC
-     LIMIT 100
+     LIMIT ${window.limit} OFFSET ${window.offset}
   `)
 
   return [...rows]
+}
+
+/**
+ * How many listings the same filter matches.
+ *
+ * Separate from reading a page rather than returned alongside it: the total decides how
+ * many pages exist, so it has to be known before the requested page can be clamped to one
+ * that does. Folding it into the page query would mean either counting twice or paging
+ * against a range nobody has measured.
+ */
+export async function countAdminListings(terms: readonly string[] = []): Promise<number> {
+  await requireAdmin()
+
+  const [counted] = await db.execute<{ total: number }>(sql`
+    SELECT count(*)::int AS total
+      FROM listings l
+      JOIN categories c ON c.id = l.category_id
+      JOIN users u ON u.id = l.seller_id
+     WHERE l.status <> 'removed' AND ${matchesTerms(terms)}
+  `)
+
+  return counted?.total ?? 0
+}
+
+/** The one search predicate both of the above use, so they cannot disagree. */
+function matchesTerms(terms: readonly string[]) {
+  return matchesAllTerms(terms, [sql`l.title`, sql`u.name`, sql`c.name`]) ?? sql`true`
 }

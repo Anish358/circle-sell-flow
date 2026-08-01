@@ -27,10 +27,6 @@ export default async function AuditPage() {
     <div className="grid gap-4">
       <header className="grid gap-1">
         <h1 className="text-lg font-semibold tracking-tight">Activity</h1>
-        <p className="text-muted-foreground text-sm">
-          Who changed the configuration, what changed, and what it means for sellers and for
-          listings that already exist.
-        </p>
       </header>
 
       {items.length === 0 ? (

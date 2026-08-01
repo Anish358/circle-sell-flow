@@ -32,10 +32,6 @@ export default async function CategoriesPage() {
       <section className="grid gap-4">
         <header className="grid gap-1">
           <h1 className="text-lg font-semibold tracking-tight">Categories</h1>
-          <p className="text-muted-foreground text-sm">
-            Field assignments apply downward. A category collects everything assigned to it and to
-            every category above it, so shared fields belong on a parent.
-          </p>
         </header>
 
         <ul className="grid gap-1">
@@ -97,10 +93,6 @@ export default async function CategoriesPage() {
 
       <aside className="grid gap-3 rounded-xl border p-4">
         <h2 className="text-sm font-semibold">Add a category</h2>
-        <p className="text-muted-foreground text-xs leading-relaxed">
-          Put it under a parent to inherit that parent&rsquo;s fields. Nothing is deployed — the
-          seller flow picks it up on the next request.
-        </p>
         <CreateCategoryForm
           parents={flat.map(({ node, depth }) => ({
             id: node.id,

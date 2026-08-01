@@ -78,12 +78,6 @@ export default async function VerificationQueuePage() {
     <div className="grid gap-6">
       <header className="grid gap-2">
         <h1 className="text-lg font-semibold tracking-tight">Hub verification</h1>
-        <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
-          What the seller claimed is one fact; what the hub measured is another, and the product
-          page shows both. Which fields the hub is asked about is configuration, not code — mark a
-          field <span className="text-foreground">Hub verifies</span> in the category editor and it
-          appears on the form below.
-        </p>
         <p className="text-muted-foreground text-xs">
           <span className="text-foreground font-medium tabular-nums">{waiting}</span> waiting ·{" "}
           <span className="text-foreground font-medium tabular-nums">{rows.length - waiting}</span>{" "}

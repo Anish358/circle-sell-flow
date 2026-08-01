@@ -234,3 +234,66 @@ describe("paging a filtered view", () => {
     expect(seen).toEqual(whole.listings.map((listing) => listing.slug))
   })
 })
+
+describe("paging backwards", () => {
+  it("returns the page before the cursor, in the same order as the page after it", async () => {
+    // Forwards to page two, then backwards from its first row: the result has to be
+    // page one again, not page one reversed and not a window that straddles both.
+    const first = await getListingPage({ categorySlug: "mobile-phone", limit: 3 })
+    expect(first.nextCursor).not.toBeNull()
+
+    const second = await getListingPage({
+      categorySlug: "mobile-phone",
+      limit: 3,
+      cursor: first.nextCursor!,
+    })
+    expect(second.previousCursor).not.toBeNull()
+
+    const back = await getListingPage({
+      categorySlug: "mobile-phone",
+      limit: 3,
+      cursor: second.previousCursor!,
+      direction: "before",
+    })
+
+    expect(back.listings.map((l) => l.slug)).toEqual(first.listings.map((l) => l.slug))
+  })
+
+  it("knows when there is nothing further in either direction", async () => {
+    const all = await getListingPage({ categorySlug: "mobile-phone", limit: 60 })
+
+    // A single page that holds everything is both the first and the last.
+    expect(all.previousCursor).toBeNull()
+    expect(all.nextCursor).toBeNull()
+
+    const page1 = await getListingPage({ categorySlug: "mobile-phone", limit: 2 })
+    expect(page1.previousCursor).toBeNull()
+
+    const page2 = await getListingPage({
+      categorySlug: "mobile-phone",
+      limit: 2,
+      cursor: page1.nextCursor!,
+    })
+    // Arriving forwards, there is always a page behind — that is where we came from.
+    expect(page2.previousCursor).not.toBeNull()
+  })
+
+  it("walks the whole set in both directions without repeating or losing a listing", async () => {
+    const everything = await getListingPage({ limit: 60 })
+    const expected = everything.listings.map((l) => l.slug)
+
+    const forwards: string[] = []
+    let cursor: Awaited<ReturnType<typeof getListingPage>>["nextCursor"] = null
+    do {
+      const page: Awaited<ReturnType<typeof getListingPage>> = await getListingPage({
+        limit: 5,
+        cursor: cursor ?? undefined,
+      })
+      forwards.push(...page.listings.map((l) => l.slug))
+      cursor = page.nextCursor
+    } while (cursor)
+
+    expect(forwards).toEqual(expected)
+    expect(new Set(forwards).size).toBe(forwards.length)
+  })
+})

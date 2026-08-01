@@ -1,4 +1,4 @@
-import { and, desc, eq, or, sql, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, or, sql, type SQL } from "drizzle-orm"
 
 import { db } from "@/db"
 import { categories, listings, users, type ListingCondition, type ListingStatus } from "@/db/schema"
@@ -53,7 +53,7 @@ export type ListingDetail = ListingCard & {
  */
 export type ListingCursor = { createdAt: string; slug: string }
 
-const DEFAULT_PAGE_SIZE = 24
+const DEFAULT_PAGE_SIZE = 12
 
 /**
  * A page of live listings, newest first, optionally narrowed to a category and to
@@ -68,6 +68,12 @@ const DEFAULT_PAGE_SIZE = 24
 export async function getListingPage(
   options: {
     cursor?: ListingCursor
+    /**
+     * Which side of the cursor to read. Backwards is what makes a Previous button
+     * possible at all: a cursor knows its neighbours, not its position, so there is no
+     * "page 4" to jump to — only the page before this one and the page after it.
+     */
+    direction?: "after" | "before"
     limit?: number
     /** Includes everything beneath it, so browsing a tier shows its leaves' listings. */
     categorySlug?: string
@@ -80,8 +86,13 @@ export async function getListingPage(
      */
     searchTerms?: readonly string[]
   } = {},
-): Promise<{ listings: ListingCard[]; nextCursor: ListingCursor | null }> {
+): Promise<{
+  listings: ListingCard[]
+  previousCursor: ListingCursor | null
+  nextCursor: ListingCursor | null
+}> {
   const limit = Math.min(options.limit ?? DEFAULT_PAGE_SIZE, 60)
+  const backwards = options.direction === "before"
 
   /**
    * "Strictly after the cursor", as a row comparison.
@@ -97,7 +108,9 @@ export async function getListingPage(
    * rows are full of them.
    */
   const after: SQL | undefined = options.cursor
-    ? sql`(${listings.createdAt}, ${listings.slug}) < (${options.cursor.createdAt}::timestamptz, ${options.cursor.slug})`
+    ? backwards
+      ? sql`(${listings.createdAt}, ${listings.slug}) > (${options.cursor.createdAt}::timestamptz, ${options.cursor.slug})`
+      : sql`(${listings.createdAt}, ${listings.slug}) < (${options.cursor.createdAt}::timestamptz, ${options.cursor.slug})`
     : undefined
 
   const withinCategory = options.categorySlug ? inCategorySubtree(options.categorySlug) : undefined
@@ -127,16 +140,35 @@ export async function getListingPage(
     .where(
       and(eq(listings.status, "active"), after, withinCategory, matchesSearch, ...matchesFilters),
     )
-    .orderBy(desc(listings.createdAt), desc(listings.slug))
+    // Reading backwards walks away from the cursor, so it has to be ordered the other
+    // way to find the *nearest* rows — and then reversed, below, to be displayed.
+    .orderBy(
+      backwards ? asc(listings.createdAt) : desc(listings.createdAt),
+      backwards ? asc(listings.slug) : desc(listings.slug),
+    )
     // One extra row is the cheapest way to know whether another page exists.
     .limit(limit + 1)
 
-  const page = rows.slice(0, limit)
+  const more = rows.length > limit
+  const window = rows.slice(0, limit)
+  const page = backwards ? [...window].reverse() : window
+
+  const first = page.at(0)
   const last = page.at(-1)
+  const at = (row: (typeof page)[number]) => ({ createdAt: row.cursorAt, slug: row.slug })
 
   return {
     listings: page.map(toCard),
-    nextCursor: rows.length > limit && last ? { createdAt: last.cursorAt, slug: last.slug } : null,
+    // Reading forwards, there is a page behind whenever we arrived by a cursor; reading
+    // backwards, the extra row is what says so. And symmetrically for the page ahead.
+    previousCursor: backwards
+      ? more && first
+        ? at(first)
+        : null
+      : options.cursor && first
+        ? at(first)
+        : null,
+    nextCursor: backwards ? (last ? at(last) : null) : more && last ? at(last) : null,
   }
 }
 

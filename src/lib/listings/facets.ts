@@ -63,6 +63,8 @@ export const FACET_PREFIX = "f."
 
 export const CATEGORY_PARAM = "category"
 export const CURSOR_PARAM = "after"
+/** The cursor read backwards, for a Previous link. Never set alongside `after`. */
+export const BACK_PARAM = "before"
 /** Free-text search over listing titles — see `@/lib/search`. */
 export const SEARCH_PARAM = "q"
 
@@ -330,10 +332,11 @@ export function browseUrl(params: URLSearchParams): string {
   return query ? `/?${query}` : "/"
 }
 
-/** The same params, minus the cursor — the base every filter link is built from. */
+/** The same params, minus either cursor — the base every filter link is built from. */
 export function firstPage(params: SearchParams | URLSearchParams): URLSearchParams {
   const next = toParams(params)
   next.delete(CURSOR_PARAM)
+  next.delete(BACK_PARAM)
   return next
 }
 

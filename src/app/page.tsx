@@ -4,11 +4,13 @@ import { CategoryNav } from "@/components/browse/category-nav"
 import { FacetPanel } from "@/components/browse/facet-panel"
 import { ButtonLink } from "@/components/button-link"
 import { ListingCard } from "@/components/listing-card"
+import { Pager } from "@/components/pager"
 import { SearchBox } from "@/components/search-box"
 import { getCategoryTree } from "@/lib/categories"
 import { resolveFormSchema } from "@/lib/form-schema/resolve"
 import { searchTerms } from "@/lib/search"
 import {
+  BACK_PARAM,
   CATEGORY_PARAM,
   CURSOR_PARAM,
   SEARCH_PARAM,
@@ -29,6 +31,9 @@ import { decodeCursor, encodeCursor, getListingPage } from "@/lib/listings/read"
  * how one bad request became several.
  */
 export const maxDuration = 20
+
+/** Twelve fills three or four card rows without a page that scrolls forever. */
+const PAGE_SIZE = 12
 
 /**
  * Browse.
@@ -60,13 +65,19 @@ export default async function HomePage(props: { searchParams: Promise<SearchPara
   const selections = readSelections(facets, params)
   const terms = searchTerms(params.get(SEARCH_PARAM))
 
-  const { listings, nextCursor } = await getListingPage({
-    cursor: decodeCursor(params.get(CURSOR_PARAM) ?? undefined),
+  // One parameter per direction, so a link says which way it is reading and a cursor is
+  // never ambiguous about the side of itself it means.
+  const backCursor = decodeCursor(params.get(BACK_PARAM) ?? undefined)
+
+  const { listings, previousCursor, nextCursor } = await getListingPage({
+    cursor: backCursor ?? decodeCursor(params.get(CURSOR_PARAM) ?? undefined),
+    direction: backCursor ? "before" : "after",
     categorySlug: schema?.category.slug,
     // Validated against this category's registry before it reaches SQL — a param
     // naming a field that is not filterable here never becomes a predicate.
     filters: toAttributeFilters(selections),
     searchTerms: terms,
+    limit: PAGE_SIZE,
   })
 
   return (
@@ -90,7 +101,7 @@ export default async function HomePage(props: { searchParams: Promise<SearchPara
             query={params.toString()}
             label="Search listings by title"
             placeholder="Search listings…"
-            resetParams={[CURSOR_PARAM]}
+            resetParams={[CURSOR_PARAM, BACK_PARAM]}
           />
 
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -110,7 +121,7 @@ export default async function HomePage(props: { searchParams: Promise<SearchPara
             <EmptyState
               filtered={selections.length > 0}
               searched={terms.length > 0 ? params.get(SEARCH_PARAM) : null}
-              paged={params.has(CURSOR_PARAM)}
+              paged={params.has(CURSOR_PARAM) || params.has(BACK_PARAM)}
               clearHref={browseUrl(withoutFacets(params))}
               clearSearchHref={browseUrl(withoutSearch(params))}
             />
@@ -122,26 +133,31 @@ export default async function HomePage(props: { searchParams: Promise<SearchPara
             </div>
           )}
 
-          {nextCursor ? (
-            <nav className="mt-6 flex justify-center">
-              {/* A link rather than a button, so the next page is crawlable and the
-                  browser's back button behaves. Built from the current params, so
-                  paging keeps the category and the filters. */}
-              <ButtonLink variant="outline" href={browseUrl(nextPage(params, nextCursor))}>
-                Show more
-              </ButtonLink>
-            </nav>
-          ) : null}
+          {/* Cursor paging, so there are no page numbers to offer: a cursor knows its
+              neighbours, not its position. What it buys is that a listing posted while
+              someone reads page two is never duplicated onto page three. */}
+          <Pager
+            previousHref={
+              previousCursor ? browseUrl(step(params, BACK_PARAM, previousCursor)) : null
+            }
+            nextHref={nextCursor ? browseUrl(step(params, CURSOR_PARAM, nextCursor)) : null}
+            summary={`${listings.length} listing${listings.length === 1 ? "" : "s"} on this page`}
+          />
         </main>
       </div>
     </div>
   )
 }
 
-/** The same view, one page further in. */
-function nextPage(params: URLSearchParams, cursor: Parameters<typeof encodeCursor>[0]) {
+/**
+ * The same view, one page in the given direction.
+ *
+ * `firstPage` drops both cursors before setting one, so a Previous link can never leave a
+ * stale forward cursor beside it — two cursors in one URL is a page that means nothing.
+ */
+function step(params: URLSearchParams, param: string, cursor: Parameters<typeof encodeCursor>[0]) {
   const next = firstPage(params)
-  next.set(CURSOR_PARAM, encodeCursor(cursor))
+  next.set(param, encodeCursor(cursor))
   return next
 }
 

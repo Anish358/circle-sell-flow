@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 
 import { getCurrentUser, isAdmin } from "@/lib/auth"
+import { AdminNav } from "./admin-nav"
 
 /**
  * A request that cannot finish in 20 seconds is not slow, it is stuck. Without this the
@@ -46,30 +46,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:py-8">
-      <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-3 border-b pb-4">
-        <nav className="flex items-center gap-1 text-sm" aria-label="Admin sections">
-          {[
-            { href: "/admin/categories", label: "Categories" },
-            { href: "/admin/fields", label: "Field library" },
-            { href: "/admin/listings", label: "Listings" },
-            { href: "/admin/verification", label: "Verification" },
-            { href: "/admin/audit", label: "Activity" },
-          ].map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              // Not prefetched. All three read the database, so prefetching turned every
-              // admin page load — and every full-tree revalidation, which discards the
-              // router cache and re-prefetches — into four concurrent renders instead of
-              // one. That is what made switching accounts and creating a category fail:
-              // not the write, the wave of speculative reads behind it.
-              prefetch={false}
-              className="hover:bg-muted rounded-md px-3 py-1.5 transition-colors"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+      <div className="mb-6 border-b">
+        <AdminNav />
       </div>
 
       {children}

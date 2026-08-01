@@ -4,6 +4,8 @@ import { sql } from "drizzle-orm"
 import { db } from "@/db"
 import { SearchBox } from "@/components/search-box"
 import { Badge } from "@/components/ui/badge"
+import { Pager } from "@/components/pager"
+import { PAGE_PARAM, pageHref, readPage } from "@/lib/pagination"
 import { matchesAllTerms, searchTerms } from "@/lib/search"
 import { CreateFieldForm } from "./create-field-form"
 import { FieldRowActions } from "./field-row-actions"
@@ -19,9 +21,27 @@ export const metadata: Metadata = { title: "Field library" }
  * categories use it and how many listings hold a value: those numbers are the blast radius
  * of any change, and they are the reason archiving asks before it acts.
  */
-export default async function FieldsPage(props: { searchParams: Promise<{ q?: string }> }) {
-  const { q } = await props.searchParams
+/** Ten to a page: enough to scan, few enough that a select field's options still fit. */
+const PAGE_SIZE = 10
+
+export default async function FieldsPage(props: {
+  searchParams: Promise<{ q?: string; page?: string }>
+}) {
+  const { q, page: rawPage } = await props.searchParams
   const terms = searchTerms(q)
+
+  const where = matchesAllTerms(terms, [sql`f.label`, sql`f.slug`]) ?? sql`true`
+
+  // The total drives both the summary and the clamp, so it is counted before the page is
+  // decided rather than inferred from a page that may not exist.
+  const [counted] = await db.execute<{ total: number }>(sql`
+    SELECT count(*)::int AS total FROM fields f WHERE ${where}
+  `)
+  const page = readPage(rawPage, PAGE_SIZE, counted?.total ?? 0)
+
+  const query = new URLSearchParams()
+  if (q) query.set("q", q)
+  if (page.number > 1) query.set(PAGE_PARAM, String(page.number))
 
   const rows = await db.execute<{
     id: number
@@ -53,8 +73,9 @@ export default async function FieldsPage(props: { searchParams: Promise<{ q?: st
       FROM fields f
      -- Label and key, not type: the type is a badge on every row, and searching "select"
      -- to find every dropdown is a filter, which is a different control.
-     WHERE ${matchesAllTerms(terms, [sql`f.label`, sql`f.slug`]) ?? sql`true`}
+     WHERE ${where}
      ORDER BY (f.archived_at IS NOT NULL), f.label
+     LIMIT ${PAGE_SIZE} OFFSET ${page.offset}
   `)
 
   // Every option in one query rather than one query per select field, then grouped in
@@ -95,24 +116,20 @@ export default async function FieldsPage(props: { searchParams: Promise<{ q?: st
     else optionsByField.set(fieldId, [option])
   }
 
-  const shared = rows.filter((row) => row.categoryCount > 1).length
-
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_22rem] lg:items-start lg:gap-10">
       <section className="grid gap-4">
         <header className="grid gap-1">
           <h1 className="text-lg font-semibold tracking-tight">Field library</h1>
-          <p className="text-muted-foreground text-sm">
-            {terms.length > 0
-              ? `${rows.length === 1 ? "1 field matches" : `${rows.length} fields match`} “${q}”.`
-              : `Fields are shared. ${shared} of ${rows.length} are used by more than one category — the same row, not a copy, which is why renaming one is free everywhere.`}
-          </p>
         </header>
 
         <SearchBox
-          query={q ? new URLSearchParams({ q }).toString() : ""}
+          query={query.toString()}
           label="Search fields by name or key"
           placeholder="Search fields…"
+          // A new search starts at the first page: page 3 of the old results is not a
+          // page of the new ones.
+          resetParams={[PAGE_PARAM]}
           className="max-w-md"
         />
 
@@ -176,14 +193,16 @@ export default async function FieldsPage(props: { searchParams: Promise<{ q?: st
             </li>
           ))}
         </ul>
+
+        <Pager
+          previousHref={page.hasPrevious ? pageHref(query.toString(), page.number - 1) : null}
+          nextHref={page.hasNext ? pageHref(query.toString(), page.number + 1) : null}
+          summary={`${page.from}–${page.to} of ${page.totalItems} field${page.totalItems === 1 ? "" : "s"}`}
+        />
       </section>
 
       <aside className="grid gap-3 rounded-xl border p-4">
         <h2 className="text-sm font-semibold">Add a field</h2>
-        <p className="text-muted-foreground text-xs leading-relaxed">
-          Check the list first — reusing a field is what makes an answer comparable across
-          categories. Its type and stored key are fixed once created.
-        </p>
         <CreateFieldForm />
       </aside>
     </div>

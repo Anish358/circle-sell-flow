@@ -1,10 +1,12 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 
+import { Pager } from "@/components/pager"
 import { SearchBox } from "@/components/search-box"
 import { Badge } from "@/components/ui/badge"
-import { listAdminListings } from "@/lib/admin/actions/listings"
+import { countAdminListings, listAdminListings } from "@/lib/admin/actions/listings"
 import { getCategoryTree, leafPaths } from "@/lib/categories"
+import { PAGE_PARAM, pageHref, readPage } from "@/lib/pagination"
 import { searchTerms } from "@/lib/search"
 import { RecategoriseDialog } from "./recategorise-dialog"
 
@@ -18,11 +20,22 @@ export const metadata: Metadata = { title: "Listings" }
  * correction that changes what a listing is allowed to say about itself — so it is an
  * explicit action with its blast radius stated, not an editable dropdown in a table.
  */
-export default async function AdminListingsPage(props: { searchParams: Promise<{ q?: string }> }) {
-  const { q } = await props.searchParams
+/** Ten to a page, matching the field library — one console, one rhythm. */
+const PAGE_SIZE = 10
+
+export default async function AdminListingsPage(props: {
+  searchParams: Promise<{ q?: string; page?: string }>
+}) {
+  const { q, page: rawPage } = await props.searchParams
   const terms = searchTerms(q)
 
-  const [rows, tree] = await Promise.all([listAdminListings(terms), getCategoryTree()])
+  const [total, tree] = await Promise.all([countAdminListings(terms), getCategoryTree()])
+  const page = readPage(rawPage, PAGE_SIZE, total)
+  const rows = await listAdminListings(terms, { limit: PAGE_SIZE, offset: page.offset })
+
+  const query = new URLSearchParams()
+  if (q) query.set("q", q)
+  if (page.number > 1) query.set(PAGE_PARAM, String(page.number))
 
   // Only leaves are offered, for the same reason the sell flow offers only leaves: the
   // tiers above exist to hold shared fields, not to hold items.
@@ -35,17 +48,13 @@ export default async function AdminListingsPage(props: { searchParams: Promise<{
     <div className="grid gap-6">
       <header className="grid gap-2">
         <h1 className="text-lg font-semibold tracking-tight">Listings</h1>
-        <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
-          A listing&rsquo;s category decides which questions it answers, so moving one is not a
-          relabelling: answers the destination does not collect are removed, and the ones it shares
-          are kept. Both are named before anything is applied.
-        </p>
       </header>
 
       <SearchBox
-        query={q ? new URLSearchParams({ q }).toString() : ""}
+        query={query.toString()}
         label="Search listings by title, seller or category"
         placeholder="Search by title, seller or category…"
+        resetParams={[PAGE_PARAM]}
         className="max-w-md"
       />
 
@@ -95,6 +104,12 @@ export default async function AdminListingsPage(props: { searchParams: Promise<{
           ))}
         </ul>
       )}
+
+      <Pager
+        previousHref={page.hasPrevious ? pageHref(query.toString(), page.number - 1) : null}
+        nextHref={page.hasNext ? pageHref(query.toString(), page.number + 1) : null}
+        summary={`${page.from}–${page.to} of ${page.totalItems} listing${page.totalItems === 1 ? "" : "s"}`}
+      />
     </div>
   )
 }
