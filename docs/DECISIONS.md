@@ -1437,3 +1437,48 @@ EXIF — is self-contained work, and half of it would be worse than none.
 **Old-slug redirects.** Slugs are unique and stable, and there is no listing-edit path at
 all, so no title change can orphan a URL today. The case cannot arise; when editing lands,
 the rule is to keep the slug or 301 the old one.
+
+---
+
+## 19. The activity feed reads in words, not in action keys
+
+The audit log stores what code needs: an action key, an entity type, an id, and the
+before/after documents. Rendered directly that is
+`category.create · category 7 · Created.` — accurate, traceable, and useless to the
+person who actually edits the registry, who is not an engineer and has never seen a
+category id. The whole argument for keeping this log is that a configuration change is
+as consequential as a deploy; a log the responsible person cannot read does not deliver
+that.
+
+So the storage stays machine-shaped and the _reading_ is translated: `activity.ts` turns
+each row into a sentence with names instead of ids, a verb instead of an action key, and
+— the part that matters most — a plain statement of the **consequence**. "Archived the
+field Battery Health" is a fact. "It disappears from new listing forms; listings that
+already have an answer keep showing it, and nothing is deleted" is what the admin was
+actually worried about when they clicked. The machine action stays reachable as a `title`
+attribute, so whoever is debugging still has it.
+
+Three decisions inside that:
+
+**Names are resolved at read time, not recorded at write time.** Storing the name in the
+entry would make the log self-describing, but it would also mean an entry quietly
+disagreeing with reality after a rename. Ids are what is stable, so ids are stored and
+names are looked up — in one query per kind for the whole page, not one per row. The
+cost is that the feed shows a category's _current_ name; for a rename the entry carries
+both names itself, so the one case where the distinction matters still reads correctly.
+
+**When a name cannot be resolved, say so.** An entry can outlive the row it points at —
+a development reset is the usual way. The first version printed the fallback where the
+name belonged, so the page read `on the field “a field”`: a placeholder wearing a name's
+clothes, which looks like a bug and hides one. It now reads `on a field that is no longer
+in the registry`, which is longer and true.
+
+**One flag became two actions.** Un-archiving an option was recorded as `option.archive`
+with a different document, which no amount of rendering could turn into "brought back".
+Restoring is now `option.restore`. A log that has to infer the verb from a diff will
+eventually infer it wrongly.
+
+The wording is unit-tested, which is unusual and earns its place here: the failure mode
+is not a crash, it is a line that says `category.create` and quietly makes the log
+worthless. Two properties are asserted for every action — that nothing a person reads
+contains a raw action key or a bare id, and that no entry renders without a sentence.

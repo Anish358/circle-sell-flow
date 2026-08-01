@@ -55,9 +55,15 @@ sibling field's visibility condition.
 the whole subtree, not by application code, so any writer bumps it. It drives the
 form-schema `ETag` and is recorded on each listing as `schema_version`.
 
-**8. Audit log.** `recordAudit` on every mutation, rendered at `/admin/audit`, with
-actor, action, entity and a before/after document. For a re-categorisation, the
-`before` document is the only surviving copy of the answers the move removed.
+**8. Audit log.** `recordAudit` on every mutation, with actor, action, entity and a
+before/after document. For a re-categorisation, the `before` document is the only
+surviving copy of the answers the move removed. Rendered at `/admin/audit` **in plain
+language** — "New category “Washing Machine” · added inside “Electronics”", not
+`category.create · category 7` — because the person who edits the registry is not an
+engineer, and a log they cannot read does not deliver the traceability it exists for.
+Each line also states the consequence, which is the thing they were worried about when
+they clicked. DECISIONS §19; `activity.test.ts` asserts no raw action key or bare id ever
+reaches what a person reads.
 
 ## B. Validation
 

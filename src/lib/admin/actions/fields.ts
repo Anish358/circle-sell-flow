@@ -353,7 +353,9 @@ export async function setOptionArchived(input: {
 
     await recordAudit({
       actorId: admin.id,
-      action: "option.archive",
+      // Two actions, not one flag: the activity feed says "retired" or "brought back",
+      // and a single `option.archive` for both would make it say the wrong one.
+      action: input.archived ? "option.archive" : "option.restore",
       entityType: "field_option",
       entityId: input.id,
       before,
