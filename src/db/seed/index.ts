@@ -36,6 +36,17 @@ function idFor<T>(map: Map<string, T>, slug: string, kind: string): T {
 
 async function seed() {
   await db.transaction(async (tx) => {
+    // Fail rather than queue.
+    //
+    // TRUNCATE takes an ACCESS EXCLUSIVE lock, and Postgres's lock queue is FIFO: while
+    // this statement waits for a reader to finish, every *later* reader waits behind it.
+    // Run against a database that is serving traffic, a seed that blocks for a minute
+    // therefore takes the whole site down with it, which is a spectacular amount of
+    // damage for a script whose job is to load sample data.
+    //
+    // Three seconds, then give up and say so. Re-running a seed is free; an outage is not.
+    await tx.execute(sql`SET LOCAL lock_timeout = '3s'`)
+
     // Truncate rather than upsert: a demo database is disposable, and an
     // idempotent seed is one less thing to reason about.
     await tx.execute(sql`

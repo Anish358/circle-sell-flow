@@ -55,6 +55,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Link
               key={item.href}
               href={item.href}
+              // Not prefetched. All three read the database, so prefetching turned every
+              // admin page load — and every full-tree revalidation, which discards the
+              // router cache and re-prefetches — into four concurrent renders instead of
+              // one. That is what made switching accounts and creating a category fail:
+              // not the write, the wave of speculative reads behind it.
+              prefetch={false}
               className="hover:bg-muted rounded-md px-3 py-1.5 transition-colors"
             >
               {item.label}

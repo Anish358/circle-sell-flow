@@ -15,8 +15,22 @@ import { Button } from "@/components/ui/button"
  */
 export function ButtonLink({
   href,
+  prefetch,
   children,
   ...props
-}: { href: string } & Omit<React.ComponentProps<typeof Button>, "render" | "nativeButton">) {
-  return <Button {...props} nativeButton={false} render={<Link href={href}>{children}</Link>} />
+}: { href: string; prefetch?: boolean } & Omit<
+  React.ComponentProps<typeof Button>,
+  "render" | "nativeButton"
+>) {
+  return (
+    <Button
+      {...props}
+      nativeButton={false}
+      render={
+        <Link href={href} prefetch={prefetch}>
+          {children}
+        </Link>
+      }
+    />
+  )
 }

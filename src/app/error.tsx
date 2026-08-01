@@ -38,7 +38,7 @@ export default function AppError({
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a
           href="/"
-          className="hover:bg-muted min-h-11 rounded-lg border px-4 text-sm leading-[2.75rem] font-medium"
+          className="hover:bg-muted min-h-11 rounded-lg border px-4 text-sm leading-11 font-medium"
         >
           Back to listings
         </a>
