@@ -28,9 +28,27 @@ import * as schema from "./schema"
  */
 function createClient() {
   return postgres(env.DATABASE_URL, {
-    // One connection per instance. Serverless invocations are single-request, so a pool
-    // per instance would multiply slot usage for no benefit.
-    max: 1,
+    // Enough connections to serve one render without pipelining.
+    //
+    // This was 1, on the reasoning that a serverless invocation handles a single request
+    // so anything more just consumes pooler slots. The first half is true; the conclusion
+    // was wrong, for two reasons.
+    //
+    // A single request is not a single query. A revalidation re-renders the whole tree,
+    // and React renders siblings concurrently — the layout resolving the current user and
+    // the page loading its own data are in flight at the same time. With `max: 1` they
+    // cannot each have a connection, so postgres.js pipelines them: several queries
+    // written onto one socket before any reply is read. A transaction-mode pooler expects
+    // one query at a time per client connection, because that is how it decides which
+    // server connection a statement belongs to. This is the one situation the app gets
+    // into that never occurs locally, where there is no pooler — and it is precisely the
+    // situation that fails.
+    //
+    // And the slot arithmetic doesn't hold either. What is scarce is Supavisor's pool of
+    // *server* connections, which it manages itself; client connections into Supavisor
+    // are cheap and are exactly what it exists to multiplex. Three costs us almost
+    // nothing and lets a concurrent render be concurrent.
+    max: 3,
 
     // Fail fast and visibly rather than hanging until the platform's timeout.
     connect_timeout: 10,
