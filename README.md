@@ -1,14 +1,12 @@
-# Circle — a category-driven Sell Product flow
+# Circle Seller Flow
 
 A secondhand marketplace where **product categories define their own seller forms**.
-There is exactly one form renderer. What a Mobile Phone is lives in database rows, so
-adding a category is an admin's afternoon and an engineer's zero deploys.
+
 
 **Live demo — https://circle-sell-flow.vercel.app**
 
-No login. Use the **Acting as** control in the header to switch between
+No login. Use the **Role** control in the header to switch between
 `admin@circle.example` (sees the admin console) and the two seeded sellers.
-Running it locally is [five commands](#running-it-locally).
 
 ![An admin assigns Ports from the shared field library to Mobile Phone, and the seller's form gains the field immediately](public/admin-preview.gif)
 
@@ -33,15 +31,6 @@ definitions in the database instead:
 ```
 Category  →  Field definitions  →  One dynamic form  →  Validated listing
 ```
-
-Adding a category or a field requires **no code changes and no deploy**.
-
-The half the brief does not say out loud is the harder one: once definitions live in
-rows that non-engineers edit, **the schema is mutable at runtime while data already
-exists against older versions of it.** Someone archives a field 400 listings hold.
-Someone makes a field required a month after those listings were written. Someone
-renames "Battery Health" to "Battery %". Most of the interesting code here is about
-that, and it is why flexibility had to arrive with rigour rather than instead of it.
 
 ---
 
@@ -70,9 +59,6 @@ Two decisions usually conflated, made separately:
 | Where field **definitions** live  | Fully normalised relational tables — the registry |
 | Where a listing's **values** live | One `jsonb` column, keyed by immutable field slug |
 
-Only the first is what makes the platform extensible. The second is a storage decision,
-and the one that needed defending — [below](#storage-jsonb-and-the-integrity-bought-back).
-
 ```
 categories ─────┐ id · parent_id · slug · name · sort · is_active · config_version
                 │   (a tree: fields apply downward, nearest ancestor wins)
@@ -95,10 +81,6 @@ listings          typed columns for what the platform reasons about
 audit_log         actor_id · action · entity_type · entity_id · before · after · at
 ```
 
-The line for what earns a typed column: **if the platform's own code sorts, filters or
-prices on it, it is a column; if only a human reads it, it is data.** Title, price,
-condition and city are columns. Battery health is data.
-
 ---
 
 ## Tech stack
@@ -112,27 +94,6 @@ condition and city are columns. Battery health is data.
 | Data layer | Drizzle — typed SQL, not ORM magic           |
 | UI         | Tailwind · shadcn/ui                         |
 | Hosting    | Vercel — `bom1`, same region as the database |
-
-Chosen to sit close to Circle's own stack and hand-written rather than generated.
-Next.js because the product page is the SEO-bearing page of a marketplace, so server
-rendering is a product argument. Drizzle because this schema needs hand-written
-constraints, triggers and a recursive CTE that a heavier ORM would fight.
-
----
-
-## How the dynamic form works
-
-Every category resolves a set of **fields** — its own plus every ancestor's. Each field
-carries its label, type, presentation, validation, required-ness, order, group and
-conditional visibility. The renderer reads that and builds the form; it has no idea what
-a category is.
-
-The same resolved schema drives four surfaces with no new form code: **selling**, **hub
-verification**, **browse filters**, and the **product page**.
-
-Nothing in `src/` outside the sample seed names a real category — no `if (slug ===
-"mobile-phone")` anywhere. The renderer switches on a field's declared `type` and
-nothing else ([field-renderer.tsx](src/components/form/field-renderer.tsx)).
 
 ---
 
@@ -195,12 +156,6 @@ help text, visibility, filterable, verifiable.
 Battery Health is required on a handset and optional on a laptop. One field, two policies,
 no duplication.
 
-### `type` and `render_as` are different things
-
-Radio versus dropdown is not a type. `single_select` is a storage and validation contract;
-rendering as radios, a dropdown or chips is presentation. Modelling them apart halves the
-validation code and makes "make that a radio group" a one-column toggle.
-
 ### Inheritance is one recursive CTE
 
 A category resolves fields from itself and every ancestor, and the **nearest ancestor wins**
@@ -211,7 +166,7 @@ lateral join, no N+1.
 
 ### Seller-claimed and hub-verified are two documents, never an overwrite
 
-Circle's thesis is that trust is the product, so the data model says it: a listing carries
+A listing carries
 `attributes` (what the seller claims) and `verified_attributes` (what a hub measured), and
 the page shows _"89% ✓ Verified · seller stated 92%"_ when they disagree. A `CHECK`
 constraint makes a verified value that cannot name **who** recorded it and **when**
@@ -221,10 +176,6 @@ the feature exists to replace.
 ---
 
 ## Adding a category without touching code
-
-Creating the category is **one `INSERT`, live immediately** — no migration, no deploy, no
-restart. What takes a few minutes is deciding what it collects. Walk it on the demo as
-`admin@circle.example`:
 
 1. **Admin → Categories → New category.** Name it "Tablet", parent "Devices". Its slug is
    derived, not typed, because a slug is a URL and an immutable key.
@@ -267,48 +218,6 @@ Where a runtime-editable schema either holds up or quietly corrupts data:
 - **Values outlive their definitions.** A listing holding an archived field, a detached field
   or a retired option keeps rendering it under "Additional details".
 
-Also handled: idempotent listing creation (a double-tapped submit returns the first listing
-rather than creating a second), keyset pagination that survives ties, mass assignment
-(`status`, `seller_id`, `verified_*` are not settable from a request body), an `ETag` on the
-hot form-schema endpoint keyed on `config_version`, a rate limit on listing creation, and the
-non-obvious XSS hole — React escapes JSX but **not** the contents of a
-`<script type="application/ld+json">` tag.
-
----
-
-## The scaling exit path
-
-When faceted counts over a large catalogue become a primary read pattern — where `jsonb`
-genuinely hurts — the path is: **expression indexes on hot keys** (which carry their own
-statistics, so they fix plan quality as well as speed) → **an EAV projection table maintained
-by trigger** → **an external search index**.
-
-None of those rungs touches the configuration model. The registry, resolver, generated
-validation and seller flow are identical in all three worlds — which is the argument that
-`jsonb` was a storage decision rather than an architectural one.
-
-This is also why buyer-side facets ship **without option counts** ("8 GB (12)"). At demo
-scale a scan is instant, which is exactly what makes it the wrong thing to ship: it would
-look finished and fail at the first real catalogue.
-
----
-
-## Deliberately left out
-
-Stated rather than silently skipped, because a quiet omission reads as an oversight.
-
-- **Photo uploads.** The rendering path is complete — ordering, primary image, alt text,
-  placeholder, sample images in the seed — but there is no upload. It needs object storage,
-  a signed-upload route and MIME sniffing rather than extension trust.
-- **Authentication.** Out of scope. The demo switches between seeded accounts, but identity
-  resolves server-side from a cookie that can only name an account, roles are read from the
-  row on every request, and every mutation re-checks — so a real session lookup changes
-  nothing else.
-- **Facet counts** and **ranked search.** Search is `ILIKE` substring matching with no index
-  behind it; the replacement is `pg_trgm` or a `tsvector` column, a swap inside one file.
-- **Duplicate detection** by perceptual hash, **AI condition grading**, **model → spec
-  autofill**, **field-level drop-off analytics**, and **i18n / unit conversion**.
-
 ---
 
 ## Running it locally
@@ -339,8 +248,6 @@ including one draft, one sold, five with hub verifications and five with photos.
 it does is an `INSERT`; there is no DDL anywhere in it, which is the whole claim the project
 makes.
 
-**Accounts.** There is no authentication. The **Acting as** control switches between the
-seeded accounts:
 
 | Account                | Role   | What it can do                          |
 | ---------------------- | ------ | --------------------------------------- |
@@ -352,14 +259,6 @@ The switcher sets which account you are; it never sets a role. The role is read 
 user row on every request, so the cookie cannot grant a privilege the account does not have
 — `/admin` refuses a seller who types the URL, and every mutation re-checks independently of
 the page that rendered it.
-
-**Deploying.** Vercel functions and Supabase Postgres must be in the same region: with
-functions in Virginia and the database in Mumbai, a single `SELECT now()` took 633 ms against
-9 ms locally, so `vercel.json` pins `regions: ["bom1"]`. The app uses the transaction pooler
-(port 6543, hence `prepare: false`) and migrations use the session pooler (5432), which keeps
-session state a transaction pooler does not. Migrations run as part of `vercel-build`, so the
-deployed schema can never lag the deployed code; seeding does not, because it truncates —
-that stays a deliberate act.
 
 ---
 
